@@ -1,0 +1,1630 @@
+"use client";
+
+import { toDataURL } from "qrcode";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
+
+type Role = "hub" | "user" | "school-admin" | "super-admin";
+type Priority = "高" | "中" | "低";
+type TicketStatus = "待派工" | "維修中" | "待料" | "已完成";
+type SlotStatus = "ok" | "warning" | "offline";
+type CartStatus = "可借用" | "需檢查" | "停用";
+
+type Ticket = {
+  id: string;
+  cart: string;
+  room: string;
+  issue: string;
+  priority: Priority;
+  status: TicketStatus;
+  reportedAt: string;
+  owner: string;
+};
+
+type Cart = {
+  id: string;
+  label: string;
+  room: string;
+  health: number;
+  battery: number;
+  offline: number;
+  slots: SlotStatus[];
+  status: CartStatus;
+};
+
+type CartForm = {
+  id: string;
+  label: string;
+  room: string;
+  tabletCount: string;
+};
+
+type Metric = {
+  label: string;
+  value: string;
+  detail: string;
+};
+
+type SchoolStatus = {
+  id: string;
+  name: string;
+  district: string;
+  admins: number;
+  carts: number;
+  warningCarts: number;
+  activeTickets: number;
+  highPriority: number;
+  uptime: string;
+  status: "正常" | "需協助" | "待設定";
+};
+
+const STORAGE_KEY = "tablet-cart-repair-system:carts";
+
+const initialTickets: Ticket[] = [
+  {
+    id: "R-2026-0830-018",
+    cart: "A 棟 3F 平板推車",
+    room: "301 自然教室",
+    issue: "第 12 台無法充電，充電座燈號未亮",
+    priority: "高",
+    status: "待派工",
+    reportedAt: "今日 09:42",
+    owner: "資訊組",
+  },
+  {
+    id: "R-2026-0830-017",
+    cart: "B 棟 2F 平板推車",
+    room: "204 英語教室",
+    issue: "推車門鎖鬆動，借還時不易關閉",
+    priority: "中",
+    status: "維修中",
+    reportedAt: "今日 08:15",
+    owner: "總務處",
+  },
+  {
+    id: "R-2026-0829-033",
+    cart: "行政樓備用推車",
+    room: "設備室",
+    issue: "2 台平板 Wi-Fi 連線不穩",
+    priority: "中",
+    status: "待料",
+    reportedAt: "昨日 16:28",
+    owner: "廠商",
+  },
+  {
+    id: "R-2026-0829-026",
+    cart: "C 棟 1F 平板推車",
+    room: "資訊教室",
+    issue: "已更換充電線並完成檢測",
+    priority: "低",
+    status: "已完成",
+    reportedAt: "昨日 11:05",
+    owner: "資訊組",
+  },
+];
+
+const initialCarts: Cart[] = [
+  {
+    id: "A3-01",
+    label: "A 棟 3F",
+    room: "301 自然教室",
+    health: 82,
+    battery: 91,
+    offline: 1,
+    status: "需檢查",
+    slots: [
+      "ok",
+      "ok",
+      "ok",
+      "warning",
+      "ok",
+      "ok",
+      "offline",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "warning",
+    ],
+  },
+  {
+    id: "B2-02",
+    label: "B 棟 2F",
+    room: "204 英語教室",
+    health: 74,
+    battery: 64,
+    offline: 3,
+    status: "需檢查",
+    slots: [
+      "warning",
+      "ok",
+      "offline",
+      "ok",
+      "ok",
+      "offline",
+      "ok",
+      "warning",
+      "ok",
+      "ok",
+      "offline",
+      "ok",
+    ],
+  },
+  {
+    id: "ADM-01",
+    label: "行政樓",
+    room: "設備室",
+    health: 96,
+    battery: 88,
+    offline: 0,
+    status: "可借用",
+    slots: [
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+    ],
+  },
+];
+
+const schoolStatuses: SchoolStatus[] = [
+  {
+    id: "SCH-ILC-001",
+    name: "宜蘭國中",
+    district: "宜蘭市",
+    admins: 3,
+    carts: 18,
+    warningCarts: 4,
+    activeTickets: 9,
+    highPriority: 2,
+    uptime: "99.8%",
+    status: "正常",
+  },
+  {
+    id: "SCH-ILC-014",
+    name: "羅東國小",
+    district: "羅東鎮",
+    admins: 2,
+    carts: 12,
+    warningCarts: 1,
+    activeTickets: 3,
+    highPriority: 0,
+    uptime: "99.9%",
+    status: "正常",
+  },
+  {
+    id: "SCH-ILC-028",
+    name: "冬山國小",
+    district: "冬山鄉",
+    admins: 1,
+    carts: 9,
+    warningCarts: 3,
+    activeTickets: 6,
+    highPriority: 1,
+    uptime: "98.7%",
+    status: "需協助",
+  },
+  {
+    id: "SCH-ILC-041",
+    name: "蘇澳高中",
+    district: "蘇澳鎮",
+    admins: 0,
+    carts: 7,
+    warningCarts: 0,
+    activeTickets: 1,
+    highPriority: 0,
+    uptime: "待啟用",
+    status: "待設定",
+  },
+];
+
+const repairTypes = ["充電異常", "設備損壞", "網路異常", "借還問題"];
+const priorities: Priority[] = ["高", "中", "低"];
+const filters: Array<"全部" | TicketStatus> = [
+  "全部",
+  "待派工",
+  "維修中",
+  "待料",
+  "已完成",
+];
+
+const roleLinks: Array<{ href: string; label: string; role: Role }> = [
+  { href: "/", label: "入口總覽", role: "hub" },
+  { href: "/user", label: "使用者頁面", role: "user" },
+  {
+    href: "/school-admin",
+    label: "各校系統管理者頁面",
+    role: "school-admin",
+  },
+  { href: "/super-admin", label: "超管頁面", role: "super-admin" },
+];
+
+const roleCopy: Record<
+  Role,
+  {
+    eyebrow: string;
+    title: string;
+    description: string;
+    cardLabel: string;
+    cardTitle: string;
+    cardDetail: string;
+  }
+> = {
+  hub: {
+    eyebrow: "角色入口",
+    title: "平板推車報修系統",
+    description:
+      "第一版已分成一般使用者、各校系統管理者、超級管理者三個頁面，從掃 QR 報修到跨校管理都能直接進入。",
+    cardLabel: "目前版本",
+    cardTitle: "三種角色頁面已啟用",
+    cardDetail: "QR Code 會導向使用者頁面並自動帶入推車資訊。",
+  },
+  user: {
+    eyebrow: "使用者頁面",
+    title: "掃描推車 QR Code 後快速報修",
+    description:
+      "老師或借用者可直接填寫故障描述、優先級與教室位置，系統會把案件送到學校管理端。",
+    cardLabel: "報修入口",
+    cardTitle: "QR 掃描已支援自動帶入",
+    cardDetail: "網址參數會填入推車、教室與報修來源。",
+  },
+  "school-admin": {
+    eyebrow: "各校系統管理者頁面",
+    title: "學校推車、QR Code 與案件看板",
+    description:
+      "資訊組可以新增推車、列印 QR Code、查看全校案件與推車健康度，並更新維修進度。",
+    cardLabel: "今日值班",
+    cardTitle: "資訊組 08:00-17:00",
+    cardDetail: "緊急案件先處理充電、離線與無法借用狀況。",
+  },
+  "super-admin": {
+    eyebrow: "超管頁面",
+    title: "跨校系統監控與權限治理",
+    description:
+      "超級管理者可查看各校啟用狀態、案件壓力、管理者設定與需要協助的學校。",
+    cardLabel: "平台狀態",
+    cardTitle: "4 所示範學校在線",
+    cardDetail: "可從這裡追蹤各校系統狀態與權限缺口。",
+  },
+};
+
+export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
+  const [tickets, setTickets] = useState(initialTickets);
+  const [managedCarts, setManagedCarts] = useState(initialCarts);
+  const [selectedCartId, setSelectedCartId] = useState(initialCarts[0].id);
+  const [filter, setFilter] = useState<(typeof filters)[number]>("全部");
+  const [room, setRoom] = useState(initialCarts[0].room);
+  const [repairType, setRepairType] = useState(repairTypes[0]);
+  const [priority, setPriority] = useState<Priority>("中");
+  const [issue, setIssue] = useState(
+    "第 12 台平板放回推車後未顯示充電，已更換插槽仍無反應。",
+  );
+  const [runtimeOrigin, setRuntimeOrigin] = useState("");
+  const [storageReady, setStorageReady] = useState(false);
+  const [copiedCartId, setCopiedCartId] = useState<string | null>(null);
+  const [generatedCartId, setGeneratedCartId] = useState(initialCarts[0].id);
+  const [scanMessage, setScanMessage] = useState("");
+  const [cartForm, setCartForm] = useState<CartForm>({
+    id: "D4-01",
+    label: "D 棟 4F",
+    room: "402 多功能教室",
+    tabletCount: "30",
+  });
+
+  const origin = runtimeOrigin;
+  const selectedCart =
+    managedCarts.find((item) => item.id === selectedCartId) ?? managedCarts[0];
+  const generatedCart =
+    managedCarts.find((item) => item.id === generatedCartId) ?? managedCarts[0];
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      const storedCarts = readStoredCarts();
+      let nextCarts = storedCarts.length > 0 ? storedCarts : initialCarts;
+
+      const params = new URLSearchParams(window.location.search);
+      const cartId = params.get("cartId");
+      const cartLabel = params.get("cart");
+      const cartRoom = params.get("room");
+
+      if (cartId && cartLabel) {
+        const scannedCart: Cart = {
+          id: cartId,
+          label: cartLabel,
+          room: cartRoom || "掃碼帶入位置",
+          health: 100,
+          battery: 100,
+          offline: 0,
+          status: "可借用",
+          slots: createSlots(30),
+        };
+
+        nextCarts = [
+          scannedCart,
+          ...nextCarts.filter((item) => item.id !== scannedCart.id),
+        ];
+        setSelectedCartId(scannedCart.id);
+        setGeneratedCartId(scannedCart.id);
+        setRoom(scannedCart.room);
+        setIssue("");
+        setScanMessage(`${scannedCart.label} 已從 QR Code 帶入報修表單。`);
+      } else if (!nextCarts.some((item) => item.id === initialCarts[0].id)) {
+        setSelectedCartId(nextCarts[0].id);
+        setRoom(nextCarts[0].room);
+      }
+
+      setManagedCarts(nextCarts);
+      setRuntimeOrigin(window.location.origin);
+      setStorageReady(true);
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
+    if (!storageReady) {
+      return;
+    }
+
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(managedCarts));
+  }, [managedCarts, storageReady]);
+
+  const schoolMetrics = useMemo(
+    () => getSchoolMetrics(tickets, managedCarts),
+    [managedCarts, tickets],
+  );
+  const userMetrics = useMemo(
+    () => getUserMetrics(tickets, managedCarts),
+    [managedCarts, tickets],
+  );
+  const superMetrics = useMemo(() => getSuperMetrics(), []);
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const nextTicket: Ticket = {
+      id: `R-2026-0830-${String(tickets.length + 19).padStart(3, "0")}`,
+      cart: `${selectedCart?.label ?? "未指定"} 平板推車`,
+      room,
+      issue: `${repairType}｜${issue.trim() || "待補充故障描述"}`,
+      priority,
+      status: "待派工",
+      reportedAt: "剛剛",
+      owner: priority === "高" ? "資訊組" : "值班人員",
+    };
+
+    setTickets((current) => [nextTicket, ...current]);
+    setIssue("");
+    setScanMessage("報修單已建立，學校管理者會在案件看板看到這筆紀錄。");
+  }
+
+  function handleCreateCart(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const id = normalizeCartId(cartForm.id || cartForm.label);
+    const label = cartForm.label.trim() || id;
+    const nextCart: Cart = {
+      id,
+      label,
+      room: cartForm.room.trim() || "待設定位置",
+      health: 100,
+      battery: 100,
+      offline: 0,
+      status: "可借用",
+      slots: createSlots(Number(cartForm.tabletCount)),
+    };
+
+    setManagedCarts((current) => [
+      nextCart,
+      ...current.filter((item) => item.id !== nextCart.id),
+    ]);
+    setSelectedCartId(nextCart.id);
+    setGeneratedCartId(nextCart.id);
+    setRoom(nextCart.room);
+    setScanMessage(`${nextCart.label} 已建立，報修網址與 QR Code 已自動產生。`);
+    setCartForm({
+      id: suggestNextCartId(id),
+      label: "",
+      room: "",
+      tabletCount: cartForm.tabletCount,
+    });
+  }
+
+  function advanceTicket(id: string) {
+    const statusFlow: Record<TicketStatus, TicketStatus> = {
+      待派工: "維修中",
+      維修中: "待料",
+      待料: "已完成",
+      已完成: "已完成",
+    };
+
+    setTickets((current) =>
+      current.map((ticket) =>
+        ticket.id === id
+          ? { ...ticket, status: statusFlow[ticket.status] }
+          : ticket,
+      ),
+    );
+  }
+
+  async function copyCartUrl(cartItem: Cart) {
+    const url = createRepairUrl(cartItem, origin);
+    if (!url) {
+      return;
+    }
+
+    try {
+      await window.navigator.clipboard.writeText(url);
+      setCopiedCartId(cartItem.id);
+      window.setTimeout(() => setCopiedCartId(null), 1800);
+    } catch {
+      setCopiedCartId(null);
+    }
+  }
+
+  return (
+    <main className="app-shell">
+      <RoleHeader activeRole={activeRole} />
+
+      {scanMessage && <p className="scan-message">{scanMessage}</p>}
+
+      {activeRole === "hub" && (
+        <HubPage metrics={schoolMetrics} carts={managedCarts} />
+      )}
+
+      {activeRole === "user" && (
+        <UserPage
+          issue={issue}
+          managedCarts={managedCarts}
+          metrics={userMetrics}
+          priority={priority}
+          repairType={repairType}
+          room={room}
+          selectedCartId={selectedCartId}
+          setIssue={setIssue}
+          setPriority={setPriority}
+          setRepairType={setRepairType}
+          setRoom={setRoom}
+          setSelectedCartId={setSelectedCartId}
+          tickets={tickets}
+          onSubmit={handleSubmit}
+        />
+      )}
+
+      {activeRole === "school-admin" && (
+        <SchoolAdminPage
+          cartForm={cartForm}
+          copiedCartId={copiedCartId}
+          filter={filter}
+          generatedCart={generatedCart}
+          managedCarts={managedCarts}
+          metrics={schoolMetrics}
+          origin={origin}
+          setCartForm={setCartForm}
+          setFilter={setFilter}
+          setGeneratedCartId={setGeneratedCartId}
+          tickets={tickets}
+          onAdvanceTicket={advanceTicket}
+          onCopyCartUrl={copyCartUrl}
+          onCreateCart={handleCreateCart}
+        />
+      )}
+
+      {activeRole === "super-admin" && (
+        <SuperAdminPage
+          filter={filter}
+          metrics={superMetrics}
+          setFilter={setFilter}
+          tickets={tickets}
+          onAdvanceTicket={advanceTicket}
+        />
+      )}
+    </main>
+  );
+}
+
+function RoleHeader({ activeRole }: { activeRole: Role }) {
+  const copy = roleCopy[activeRole];
+
+  return (
+    <header className="topbar">
+      <div className="brand-block">
+        <span className="eyebrow">{copy.eyebrow}</span>
+        <h1>{copy.title}</h1>
+        <p>{copy.description}</p>
+        <nav className="role-nav" aria-label="角色頁面">
+          {roleLinks.map((link) => (
+            <a
+              aria-current={activeRole === link.role ? "page" : undefined}
+              className={activeRole === link.role ? "active" : ""}
+              href={link.href}
+              key={link.href}
+            >
+              {link.label}
+            </a>
+          ))}
+        </nav>
+      </div>
+      <div className="shift-card" aria-label="頁面狀態">
+        <span>{copy.cardLabel}</span>
+        <strong>{copy.cardTitle}</strong>
+        <small>{copy.cardDetail}</small>
+      </div>
+    </header>
+  );
+}
+
+function HubPage({ metrics, carts }: { metrics: Metric[]; carts: Cart[] }) {
+  return (
+    <>
+      <section className="role-card-grid" aria-label="角色入口">
+        <RoleEntry
+          href="/user"
+          label="使用者頁面"
+          title="掃 QR 填報修"
+          description="老師掃描推車上的 QR Code 後，推車位置會自動帶入，只要補上問題描述即可送出。"
+        />
+        <RoleEntry
+          href="/school-admin"
+          label="各校系統管理者頁面"
+          title="新增推車與案件管理"
+          description="學校資訊組可新增推車、產生網址與 QR Code，並在同一頁處理維修進度。"
+        />
+        <RoleEntry
+          href="/super-admin"
+          label="超管頁面"
+          title="跨校總覽與權限"
+          description="超級管理者可掌握各校啟用狀態、案件量、管理者名額與需要支援的學校。"
+        />
+      </section>
+
+      <MetricGrid metrics={metrics} label="平台今日概況" />
+
+      <section className="operations-grid">
+        <section className="panel flow-panel" aria-label="第一版流程">
+          <PanelHeader eyebrow="流程" title="第一版本完整動線" />
+          <ol className="flow-list">
+            <li>
+              <strong>學校管理者新增推車</strong>
+              <p>輸入推車編號、位置、平板數量後，系統自動產生報修網址與 QR Code。</p>
+            </li>
+            <li>
+              <strong>使用者掃碼報修</strong>
+              <p>QR Code 開啟 `/user`，推車資訊自動帶入報修表單。</p>
+            </li>
+            <li>
+              <strong>學校管理者派工</strong>
+              <p>案件進入看板後可從待派工、維修中、待料一路更新到已完成。</p>
+            </li>
+            <li>
+              <strong>超管跨校追蹤</strong>
+              <p>集中查看各校系統狀態，找出需要協助上線或權限補齊的學校。</p>
+            </li>
+          </ol>
+        </section>
+
+        <aside className="panel timeline-panel" aria-label="推車狀態摘要">
+          <PanelHeader eyebrow="設備" title="目前推車摘要" />
+          <div className="status-list">
+            {carts.map((cart) => (
+              <div className="status-line" key={cart.id}>
+                <div>
+                  <strong>{cart.label}</strong>
+                  <span>{cart.room}</span>
+                </div>
+                <StatusPill status={cart.status} />
+              </div>
+            ))}
+          </div>
+        </aside>
+      </section>
+    </>
+  );
+}
+
+function UserPage({
+  issue,
+  managedCarts,
+  metrics,
+  priority,
+  repairType,
+  room,
+  selectedCartId,
+  setIssue,
+  setPriority,
+  setRepairType,
+  setRoom,
+  setSelectedCartId,
+  tickets,
+  onSubmit,
+}: {
+  issue: string;
+  managedCarts: Cart[];
+  metrics: Metric[];
+  priority: Priority;
+  repairType: string;
+  room: string;
+  selectedCartId: string;
+  setIssue: (value: string) => void;
+  setPriority: (value: Priority) => void;
+  setRepairType: (value: string) => void;
+  setRoom: (value: string) => void;
+  setSelectedCartId: (value: string) => void;
+  tickets: Ticket[];
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <>
+      <MetricGrid metrics={metrics} label="使用者報修概況" />
+
+      <section className="workspace-grid">
+        <RepairPanel
+          issue={issue}
+          managedCarts={managedCarts}
+          priority={priority}
+          repairType={repairType}
+          room={room}
+          selectedCartId={selectedCartId}
+          setIssue={setIssue}
+          setPriority={setPriority}
+          setRepairType={setRepairType}
+          setRoom={setRoom}
+          setSelectedCartId={setSelectedCartId}
+          onSubmit={onSubmit}
+        />
+
+        <section className="panel" aria-label="我的報修進度">
+          <PanelHeader
+            eyebrow="我的紀錄"
+            title="報修進度"
+            action={<span className="status-chip success">送出後即建立案件</span>}
+          />
+          <div className="user-ticket-list">
+            {tickets.slice(0, 4).map((ticket) => (
+              <article className="mini-ticket" key={ticket.id}>
+                <div className="ticket-meta">
+                  <span>{ticket.id}</span>
+                  <PriorityBadge priority={ticket.priority} />
+                  <StatusBadge status={ticket.status} />
+                </div>
+                <h3>{ticket.cart}</h3>
+                <p>{ticket.issue}</p>
+                <small>
+                  {ticket.room}｜{ticket.reportedAt}
+                </small>
+              </article>
+            ))}
+          </div>
+        </section>
+      </section>
+
+      <section className="operations-grid user-operations">
+        <section className="cart-section" aria-label="可借用推車">
+          <PanelHeader eyebrow="設備" title="可借用推車與健康度" />
+          <CartGrid carts={managedCarts} />
+        </section>
+
+        <aside className="panel timeline-panel" aria-label="報修提醒">
+          <PanelHeader eyebrow="提醒" title="報修後會發生什麼" />
+          <ol className="timeline">
+            <li>
+              <span>第 1 步</span>
+              <strong>系統建立案件</strong>
+              <p>送出表單後，學校管理者頁面會出現待派工案件。</p>
+            </li>
+            <li>
+              <span>第 2 步</span>
+              <strong>資訊組確認狀態</strong>
+              <p>高優先級會先檢查充電、離線與無法借用問題。</p>
+            </li>
+            <li>
+              <span>第 3 步</span>
+              <strong>維修完成後結案</strong>
+              <p>案件狀態會更新，方便老師回來查看進度。</p>
+            </li>
+          </ol>
+        </aside>
+      </section>
+    </>
+  );
+}
+
+function SchoolAdminPage({
+  cartForm,
+  copiedCartId,
+  filter,
+  generatedCart,
+  managedCarts,
+  metrics,
+  origin,
+  setCartForm,
+  setFilter,
+  setGeneratedCartId,
+  tickets,
+  onAdvanceTicket,
+  onCopyCartUrl,
+  onCreateCart,
+}: {
+  cartForm: CartForm;
+  copiedCartId: string | null;
+  filter: (typeof filters)[number];
+  generatedCart: Cart;
+  managedCarts: Cart[];
+  metrics: Metric[];
+  origin: string;
+  setCartForm: (updater: (current: CartForm) => CartForm) => void;
+  setFilter: (value: (typeof filters)[number]) => void;
+  setGeneratedCartId: (value: string) => void;
+  tickets: Ticket[];
+  onAdvanceTicket: (id: string) => void;
+  onCopyCartUrl: (cart: Cart) => void;
+  onCreateCart: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <>
+      <MetricGrid metrics={metrics} label="學校管理概況" />
+
+      <section className="admin-section panel" aria-label="推車 QR Code 管理">
+        <div className="admin-layout">
+          <div>
+            <PanelHeader
+              eyebrow="管理端"
+              title="新增推車並自動產生 QR Code"
+              action={<span className="status-chip success">可列印張貼</span>}
+            />
+            <form className="admin-form" onSubmit={onCreateCart}>
+              <div className="admin-form-grid">
+                <label>
+                  推車編號
+                  <input
+                    required
+                    value={cartForm.id}
+                    onChange={(event) =>
+                      setCartForm((current) => ({
+                        ...current,
+                        id: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  推車位置
+                  <input
+                    required
+                    placeholder="例如：D 棟 4F"
+                    value={cartForm.label}
+                    onChange={(event) =>
+                      setCartForm((current) => ({
+                        ...current,
+                        label: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  教室或保管位置
+                  <input
+                    required
+                    placeholder="例如：402 多功能教室"
+                    value={cartForm.room}
+                    onChange={(event) =>
+                      setCartForm((current) => ({
+                        ...current,
+                        room: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  平板數量
+                  <input
+                    min="1"
+                    max="60"
+                    type="number"
+                    value={cartForm.tabletCount}
+                    onChange={(event) =>
+                      setCartForm((current) => ({
+                        ...current,
+                        tabletCount: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+              <button className="primary-action" type="submit">
+                新增推車並產生 QR
+              </button>
+            </form>
+          </div>
+
+          <CartQrCard
+            cart={generatedCart}
+            copied={copiedCartId === generatedCart.id}
+            onCopy={() => onCopyCartUrl(generatedCart)}
+            url={createRepairUrl(generatedCart, origin)}
+          />
+        </div>
+
+        <div className="managed-cart-list" aria-label="推車 QR Code 清單">
+          {managedCarts.map((item) => (
+            <article className="managed-cart-row" key={item.id}>
+              <div>
+                <span>{item.id}</span>
+                <strong>{item.label}</strong>
+                <small>{item.room}</small>
+              </div>
+              <code>{createRepairUrl(item, origin) || "網址載入中"}</code>
+              <button
+                className="ghost-action"
+                disabled={!origin}
+                onClick={() => {
+                  setGeneratedCartId(item.id);
+                  onCopyCartUrl(item);
+                }}
+                type="button"
+              >
+                {copiedCartId === item.id ? "已複製" : "複製網址"}
+              </button>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="operations-grid">
+        <TicketBoard
+          filter={filter}
+          setFilter={setFilter}
+          tickets={tickets}
+          onAdvanceTicket={onAdvanceTicket}
+        />
+
+        <aside className="panel timeline-panel" aria-label="今日維修進度">
+          <PanelHeader eyebrow="今日排程" title="維修進度" />
+          <ol className="timeline">
+            <li>
+              <span>09:50</span>
+              <strong>A3-01 充電座檢查</strong>
+              <p>優先確認第 12 台插槽與電源模組。</p>
+            </li>
+            <li>
+              <span>11:20</span>
+              <strong>B2-02 門鎖零件更換</strong>
+              <p>總務處協助備料，午休前完成。</p>
+            </li>
+            <li>
+              <span>14:00</span>
+              <strong>行政樓 Wi-Fi 測試</strong>
+              <p>廠商遠端查看 AP 與平板連線紀錄。</p>
+            </li>
+          </ol>
+        </aside>
+      </section>
+
+      <section className="operations-grid">
+        <section className="cart-section" aria-label="推車健康度">
+          <PanelHeader eyebrow="設備狀態" title="推車健康度" />
+          <CartGrid carts={managedCarts} />
+        </section>
+
+        <aside className="panel governance-panel" aria-label="學校管理設定">
+          <PanelHeader eyebrow="設定" title="學校管理權限" />
+          <div className="status-list">
+            <div className="status-line">
+              <div>
+                <strong>資訊組管理者</strong>
+                <span>3 位已啟用</span>
+              </div>
+              <span className="status-chip success">正常</span>
+            </div>
+            <div className="status-line">
+              <div>
+                <strong>維修廠商窗口</strong>
+                <span>1 位等待確認</span>
+              </div>
+              <span className="status-chip status-待料">待確認</span>
+            </div>
+            <div className="status-line">
+              <div>
+                <strong>QR 張貼清單</strong>
+                <span>{managedCarts.length} 台推車</span>
+              </div>
+              <span className="status-chip success">已同步</span>
+            </div>
+          </div>
+        </aside>
+      </section>
+    </>
+  );
+}
+
+function SuperAdminPage({
+  filter,
+  metrics,
+  setFilter,
+  tickets,
+  onAdvanceTicket,
+}: {
+  filter: (typeof filters)[number];
+  metrics: Metric[];
+  setFilter: (value: (typeof filters)[number]) => void;
+  tickets: Ticket[];
+  onAdvanceTicket: (id: string) => void;
+}) {
+  return (
+    <>
+      <MetricGrid metrics={metrics} label="超管平台概況" />
+
+      <section className="super-layout">
+        <section className="panel school-status-panel" aria-label="各校系統狀態">
+          <PanelHeader
+            eyebrow="跨校總覽"
+            title="各校系統狀態"
+            action={<span className="status-chip success">權限與啟用狀態</span>}
+          />
+          <div className="school-table-wrap">
+            <table className="school-table">
+              <thead>
+                <tr>
+                  <th>學校</th>
+                  <th>區域</th>
+                  <th>管理者</th>
+                  <th>推車</th>
+                  <th>待處理</th>
+                  <th>高優先</th>
+                  <th>可用率</th>
+                  <th>狀態</th>
+                </tr>
+              </thead>
+              <tbody>
+                {schoolStatuses.map((school) => (
+                  <tr key={school.id}>
+                    <td>
+                      <strong>{school.name}</strong>
+                      <span>{school.id}</span>
+                    </td>
+                    <td>{school.district}</td>
+                    <td>{school.admins} 位</td>
+                    <td>
+                      {school.carts} 台
+                      <small>{school.warningCarts} 台需檢查</small>
+                    </td>
+                    <td>{school.activeTickets} 件</td>
+                    <td>{school.highPriority} 件</td>
+                    <td>{school.uptime}</td>
+                    <td>
+                      <span className={`status-chip status-${school.status}`}>
+                        {school.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside className="panel governance-panel" aria-label="平台治理">
+          <PanelHeader eyebrow="治理" title="平台管理清單" />
+          <div className="status-list">
+            <div className="status-line">
+              <div>
+                <strong>全域角色</strong>
+                <span>超管、學校管理者、使用者</span>
+              </div>
+              <span className="status-chip success">已建立</span>
+            </div>
+            <div className="status-line">
+              <div>
+                <strong>待補管理者</strong>
+                <span>蘇澳高中尚未設定校內管理員</span>
+              </div>
+              <span className="status-chip status-待派工">需處理</span>
+            </div>
+            <div className="status-line">
+              <div>
+                <strong>QR 規則</strong>
+                <span>所有 QR 統一導向使用者頁面</span>
+              </div>
+              <span className="status-chip success">已套用</span>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <section className="operations-grid">
+        <TicketBoard
+          filter={filter}
+          setFilter={setFilter}
+          tickets={tickets}
+          title="跨校案件看板"
+          onAdvanceTicket={onAdvanceTicket}
+        />
+
+        <aside className="panel timeline-panel" aria-label="超管處理建議">
+          <PanelHeader eyebrow="優先事項" title="今日需要追蹤" />
+          <ol className="timeline">
+            <li>
+              <span>權限</span>
+              <strong>補齊蘇澳高中管理者</strong>
+              <p>目前尚無校內管理員，需邀請資訊組或設備負責人。</p>
+            </li>
+            <li>
+              <span>設備</span>
+              <strong>冬山國小異常推車偏高</strong>
+              <p>9 台推車中有 3 台需檢查，建議安排巡檢。</p>
+            </li>
+            <li>
+              <span>服務</span>
+              <strong>確認高優先案件派工</strong>
+              <p>跨校高優先案件目前 3 件，需確認是否已通知窗口。</p>
+            </li>
+          </ol>
+        </aside>
+      </section>
+    </>
+  );
+}
+
+function RepairPanel({
+  issue,
+  managedCarts,
+  priority,
+  repairType,
+  room,
+  selectedCartId,
+  setIssue,
+  setPriority,
+  setRepairType,
+  setRoom,
+  setSelectedCartId,
+  onSubmit,
+}: {
+  issue: string;
+  managedCarts: Cart[];
+  priority: Priority;
+  repairType: string;
+  room: string;
+  selectedCartId: string;
+  setIssue: (value: string) => void;
+  setPriority: (value: Priority) => void;
+  setRepairType: (value: string) => void;
+  setRoom: (value: string) => void;
+  setSelectedCartId: (value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <section className="panel repair-panel" aria-label="新增報修單">
+      <PanelHeader
+        eyebrow="報修登錄"
+        title="新增報修單"
+        action={<span className="status-chip success">掃碼可帶入</span>}
+      />
+
+      <form className="repair-form" onSubmit={onSubmit}>
+        <label>
+          推車位置
+          <select
+            value={selectedCartId}
+            onChange={(event) => {
+              const nextCart = managedCarts.find(
+                (item) => item.id === event.target.value,
+              );
+              setSelectedCartId(event.target.value);
+              setRoom(nextCart?.room ?? room);
+            }}
+          >
+            {managedCarts.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          教室或保管位置
+          <input value={room} onChange={(event) => setRoom(event.target.value)} />
+        </label>
+
+        <div className="field-group">
+          <span>問題類型</span>
+          <div className="choice-grid">
+            {repairTypes.map((type) => (
+              <button
+                aria-pressed={repairType === type}
+                className={repairType === type ? "choice active" : "choice"}
+                key={type}
+                onClick={() => setRepairType(type)}
+                type="button"
+              >
+                {type}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="field-group">
+          <span>優先級</span>
+          <div className="segment-control">
+            {priorities.map((item) => (
+              <button
+                aria-pressed={priority === item}
+                className={priority === item ? "active" : ""}
+                key={item}
+                onClick={() => setPriority(item)}
+                type="button"
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <label>
+          故障描述
+          <textarea
+            value={issue}
+            onChange={(event) => setIssue(event.target.value)}
+          />
+        </label>
+
+        <button className="primary-action" type="submit">
+          建立報修單
+        </button>
+      </form>
+    </section>
+  );
+}
+
+function TicketBoard({
+  filter,
+  setFilter,
+  tickets,
+  title = "案件看板",
+  onAdvanceTicket,
+}: {
+  filter: (typeof filters)[number];
+  setFilter: (value: (typeof filters)[number]) => void;
+  tickets: Ticket[];
+  title?: string;
+  onAdvanceTicket: (id: string) => void;
+}) {
+  const filteredTickets =
+    filter === "全部"
+      ? tickets
+      : tickets.filter((ticket) => ticket.status === filter);
+
+  return (
+    <section className="panel ticket-panel" aria-label={title}>
+      <PanelHeader
+        eyebrow={title}
+        title={`${filteredTickets.length} 件案件`}
+        action={
+          <button className="ghost-action" type="button">
+            匯出清單
+          </button>
+        }
+      />
+
+      <div className="filter-row" aria-label="案件篩選">
+        {filters.map((item) => (
+          <button
+            aria-pressed={filter === item}
+            className={filter === item ? "active" : ""}
+            key={item}
+            onClick={() => setFilter(item)}
+            type="button"
+          >
+            {item}
+          </button>
+        ))}
+      </div>
+
+      <div className="ticket-list">
+        {filteredTickets.map((ticket) => (
+          <article className="ticket-row" key={ticket.id}>
+            <div className="ticket-main">
+              <div className="ticket-meta">
+                <span>{ticket.id}</span>
+                <PriorityBadge priority={ticket.priority} />
+                <StatusBadge status={ticket.status} />
+              </div>
+              <h3>{ticket.cart}</h3>
+              <p>{ticket.issue}</p>
+            </div>
+            <div className="ticket-side">
+              <span>{ticket.room}</span>
+              <span>{ticket.reportedAt}</span>
+              <strong>{ticket.owner}</strong>
+              <button
+                disabled={ticket.status === "已完成"}
+                onClick={() => onAdvanceTicket(ticket.id)}
+                type="button"
+              >
+                {ticket.status === "已完成" ? "已結案" : "更新進度"}
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MetricGrid({ label, metrics }: { label: string; metrics: Metric[] }) {
+  return (
+    <section className="metric-grid" aria-label={label}>
+      {metrics.map((metric) => (
+        <article className="metric-card" key={metric.label}>
+          <span>{metric.label}</span>
+          <strong>{metric.value}</strong>
+          <p>{metric.detail}</p>
+        </article>
+      ))}
+    </section>
+  );
+}
+
+function RoleEntry({
+  description,
+  href,
+  label,
+  title,
+}: {
+  description: string;
+  href: string;
+  label: string;
+  title: string;
+}) {
+  return (
+    <article className="role-card">
+      <span>{label}</span>
+      <h2>{title}</h2>
+      <p>{description}</p>
+      <a className="card-link" href={href}>
+        進入頁面
+      </a>
+    </article>
+  );
+}
+
+function PanelHeader({
+  eyebrow,
+  title,
+  action,
+}: {
+  eyebrow: string;
+  title: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="panel-header">
+      <div>
+        <span>{eyebrow}</span>
+        <h2>{title}</h2>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function CartQrCard({
+  cart,
+  copied,
+  onCopy,
+  url,
+}: {
+  cart: Cart;
+  copied: boolean;
+  onCopy: () => void;
+  url: string;
+}) {
+  const [qrDataUrl, setQrDataUrl] = useState("");
+
+  useEffect(() => {
+    let isActive = true;
+
+    if (!url) {
+      return () => {
+        isActive = false;
+      };
+    }
+
+    void toDataURL(url, {
+      errorCorrectionLevel: "M",
+      margin: 2,
+      scale: 7,
+      color: {
+        dark: "#18201d",
+        light: "#ffffff",
+      },
+    }).then((nextUrl) => {
+      if (isActive) {
+        setQrDataUrl(nextUrl);
+      }
+    });
+
+    return () => {
+      isActive = false;
+    };
+  }, [url]);
+
+  return (
+    <article className="qr-card">
+      <div>
+        <span>最新 QR Code</span>
+        <h3>{cart.label}</h3>
+        <p>{cart.room}</p>
+      </div>
+      <div className="qr-frame">
+        {qrDataUrl ? (
+          /* eslint-disable-next-line @next/next/no-img-element -- QR is a client-generated data URL. */
+          <img alt={`${cart.label} 報修 QR Code`} src={qrDataUrl} />
+        ) : (
+          <span>產生中</span>
+        )}
+      </div>
+      <div className="url-box">{url || "網址載入中"}</div>
+      <div className="qr-actions">
+        <button className="ghost-action" onClick={onCopy} type="button">
+          {copied ? "已複製網址" : "複製網址"}
+        </button>
+        <a
+          aria-disabled={!qrDataUrl}
+          className={qrDataUrl ? "download-link" : "download-link disabled"}
+          download={`${cart.id}-repair-qr.png`}
+          href={qrDataUrl || undefined}
+        >
+          下載 QR
+        </a>
+      </div>
+    </article>
+  );
+}
+
+function CartGrid({ carts }: { carts: Cart[] }) {
+  return (
+    <div className="cart-grid">
+      {carts.map((item) => (
+        <article className="cart-tile" key={item.id}>
+          <div className="cart-tile-header">
+            <div>
+              <span>{item.id}</span>
+              <h3>{item.label}</h3>
+            </div>
+            <StatusPill status={item.status} />
+          </div>
+          <div className="slot-map" aria-label={`${item.label} 插槽狀態`}>
+            {item.slots.map((slot, index) => (
+              <span className={slot} key={`${item.id}-${index}`} />
+            ))}
+          </div>
+          <Meter label="健康度" value={item.health} />
+          <Meter label="平均電量" value={item.battery} />
+          <p>離線設備：{item.offline} 台</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function PriorityBadge({ priority }: { priority: Priority }) {
+  return <span className={`priority-badge priority-${priority}`}>{priority}</span>;
+}
+
+function StatusBadge({ status }: { status: TicketStatus }) {
+  return <span className={`status-chip status-${status}`}>{status}</span>;
+}
+
+function StatusPill({ status }: { status: Cart["status"] }) {
+  return <span className={`status-pill status-${status}`}>{status}</span>;
+}
+
+function Meter({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="meter">
+      <div>
+        <span>{label}</span>
+        <strong>{value}%</strong>
+      </div>
+      <progress max="100" value={value}>
+        {value}%
+      </progress>
+    </div>
+  );
+}
+
+function getSchoolMetrics(tickets: Ticket[], carts: Cart[]): Metric[] {
+  const active = tickets.filter((ticket) => ticket.status !== "已完成");
+  return [
+    {
+      label: "待處理案件",
+      value: active.length.toString(),
+      detail: "今日值班：資訊組",
+    },
+    {
+      label: "高優先級",
+      value: tickets
+        .filter(
+          (ticket) => ticket.priority === "高" && ticket.status !== "已完成",
+        )
+        .length.toString(),
+      detail: "需先派工確認",
+    },
+    {
+      label: "可借用推車",
+      value: carts.filter((item) => item.status === "可借用").length.toString(),
+      detail: `全校 ${carts.length} 台`,
+    },
+    {
+      label: "平均回應",
+      value: "1.8h",
+      detail: "近 7 日",
+    },
+  ];
+}
+
+function getUserMetrics(tickets: Ticket[], carts: Cart[]): Metric[] {
+  return [
+    {
+      label: "我的待處理",
+      value: tickets
+        .filter((ticket) => ticket.status !== "已完成")
+        .length.toString(),
+      detail: "送出後由資訊組派工",
+    },
+    {
+      label: "可借用推車",
+      value: carts.filter((item) => item.status === "可借用").length.toString(),
+      detail: "掃 QR 可自動帶入",
+    },
+    {
+      label: "已完成",
+      value: tickets
+        .filter((ticket) => ticket.status === "已完成")
+        .length.toString(),
+      detail: "近兩日示範紀錄",
+    },
+    {
+      label: "平均回覆",
+      value: "1.8h",
+      detail: "高優先案件會先通知",
+    },
+  ];
+}
+
+function getSuperMetrics(): Metric[] {
+  const activeTickets = schoolStatuses.reduce(
+    (sum, school) => sum + school.activeTickets,
+    0,
+  );
+  const warningCarts = schoolStatuses.reduce(
+    (sum, school) => sum + school.warningCarts,
+    0,
+  );
+  const totalCarts = schoolStatuses.reduce((sum, school) => sum + school.carts, 0);
+  const highPriority = schoolStatuses.reduce(
+    (sum, school) => sum + school.highPriority,
+    0,
+  );
+
+  return [
+    {
+      label: "上線學校",
+      value: schoolStatuses.length.toString(),
+      detail: "示範租戶",
+    },
+    {
+      label: "總推車數",
+      value: totalCarts.toString(),
+      detail: `${warningCarts} 台需檢查`,
+    },
+    {
+      label: "跨校待處理",
+      value: activeTickets.toString(),
+      detail: "含待派工、維修中、待料",
+    },
+    {
+      label: "高優先案件",
+      value: highPriority.toString(),
+      detail: "今日需追蹤",
+    },
+  ];
+}
+
+function createRepairUrl(
+  cart: Pick<Cart, "id" | "label" | "room">,
+  origin: string,
+) {
+  if (!origin) {
+    return "";
+  }
+
+  const url = new URL("/user", origin);
+  url.searchParams.set("cartId", cart.id);
+  url.searchParams.set("cart", cart.label);
+  url.searchParams.set("room", cart.room);
+  url.searchParams.set("source", "qr");
+  return url.toString();
+}
+
+function createSlots(count: number): SlotStatus[] {
+  const safeCount = Number.isFinite(count)
+    ? Math.min(Math.max(Math.round(count), 1), 60)
+    : 30;
+
+  return Array.from({ length: safeCount }, () => "ok");
+}
+
+function normalizeCartId(value: string) {
+  const normalized = value
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^0-9A-Za-z-]/g, "")
+    .toUpperCase();
+
+  return normalized || `CART-${Date.now().toString().slice(-4)}`;
+}
+
+function suggestNextCartId(currentId: string) {
+  const match = currentId.match(/^(.*?)(\d+)$/);
+  if (!match) {
+    return `${currentId}-02`;
+  }
+
+  const [, prefix, numberText] = match;
+  const nextNumber = String(Number(numberText) + 1).padStart(
+    numberText.length,
+    "0",
+  );
+  return `${prefix}${nextNumber}`;
+}
+
+function readStoredCarts() {
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    if (!stored) {
+      return [];
+    }
+
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter(isCart);
+  } catch {
+    return [];
+  }
+}
+
+function isCart(value: unknown): value is Cart {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const cart = value as Cart;
+  return (
+    typeof cart.id === "string" &&
+    typeof cart.label === "string" &&
+    typeof cart.room === "string" &&
+    typeof cart.health === "number" &&
+    typeof cart.battery === "number" &&
+    typeof cart.offline === "number" &&
+    Array.isArray(cart.slots) &&
+    typeof cart.status === "string"
+  );
+}

@@ -98,8 +98,7 @@ button:disabled {
   flex-direction: column;
   justify-content: center;
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(232, 241, 231, 0.9)),
-    radial-gradient(circle at 92% 18%, rgba(244, 185, 66, 0.34), transparent 28%);
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(232, 241, 231, 0.9));
 }
 
 .eyebrow,
@@ -128,6 +127,48 @@ button:disabled {
   color: var(--muted);
   font-size: 1rem;
   line-height: 1.75;
+}
+
+.role-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.role-nav a,
+.card-link {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.84);
+  color: #38463e;
+  font-size: 0.88rem;
+  font-weight: 800;
+  text-decoration: none;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.role-nav a {
+  padding: 0 13px;
+}
+
+.role-nav a:hover,
+.card-link:hover {
+  border-color: var(--green);
+  color: #1d513a;
+}
+
+.role-nav a.active {
+  border-color: var(--surface-strong);
+  background: var(--surface-strong);
+  color: #fff;
 }
 
 .shift-card {
@@ -194,6 +235,57 @@ button:disabled {
   margin: 0;
   color: var(--muted);
   font-size: 0.88rem;
+}
+
+.role-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  max-width: 1240px;
+  margin: 18px auto 0;
+}
+
+.role-card {
+  min-height: 238px;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: var(--shadow);
+  padding: 22px;
+}
+
+.role-card span,
+.qr-card span,
+.managed-cart-row span,
+.school-table span,
+.mini-ticket small {
+  color: var(--green);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.role-card h2 {
+  margin: 0;
+  color: #17231d;
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.role-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.94rem;
+  line-height: 1.7;
+}
+
+.card-link {
+  width: fit-content;
+  margin-top: auto;
+  padding: 0 16px;
 }
 
 .workspace-grid {
@@ -495,6 +587,21 @@ button:disabled {
   color: #1d513a;
 }
 
+.status-正常 {
+  background: var(--green-soft);
+  color: #1d513a;
+}
+
+.status-需協助 {
+  background: var(--gold-soft);
+  color: #755818;
+}
+
+.status-待設定 {
+  background: var(--red-soft);
+  color: #9a3412;
+}
+
 .admin-section {
   max-width: 1240px;
   margin: 18px auto 0;
@@ -658,6 +765,127 @@ button:disabled {
 
 .cart-section {
   min-width: 0;
+}
+
+.super-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 18px;
+  max-width: 1240px;
+  margin: 18px auto 0;
+}
+
+.flow-panel,
+.school-status-panel {
+  min-width: 0;
+}
+
+.flow-list,
+.status-list,
+.user-ticket-list {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.flow-list li,
+.status-line,
+.mini-ticket {
+  border: 1px solid #e2e6dc;
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 14px;
+}
+
+.flow-list strong,
+.status-line strong,
+.mini-ticket h3 {
+  display: block;
+  color: #1b2922;
+  font-size: 0.96rem;
+  font-weight: 800;
+}
+
+.flow-list p,
+.mini-ticket p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.status-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.status-line > div span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.user-ticket-list {
+  gap: 10px;
+}
+
+.mini-ticket .ticket-meta {
+  margin-bottom: 10px;
+}
+
+.mini-ticket h3 {
+  margin: 0;
+}
+
+.mini-ticket small {
+  display: block;
+  margin-top: 8px;
+}
+
+.school-table-wrap {
+  overflow-x: auto;
+  margin-top: 16px;
+}
+
+.school-table {
+  width: 100%;
+  min-width: 780px;
+  border-collapse: collapse;
+}
+
+.school-table th,
+.school-table td {
+  border-bottom: 1px solid #e2e6dc;
+  padding: 13px 10px;
+  color: #314039;
+  font-size: 0.88rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.school-table th {
+  color: var(--green);
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.school-table td strong {
+  display: block;
+  color: #17231d;
+  font-size: 0.92rem;
+}
+
+.school-table td small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
 }
 
 .cart-grid {
@@ -840,11 +1068,13 @@ button:disabled {
   .topbar,
   .workspace-grid,
   .admin-layout,
-  .operations-grid {
+  .operations-grid,
+  .super-layout {
     grid-template-columns: 1fr;
   }
 
-  .metric-grid {
+  .metric-grid,
+  .role-card-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -866,13 +1096,15 @@ button:disabled {
   .shift-card,
   .panel,
   .metric-card,
-  .cart-tile {
+  .cart-tile,
+  .role-card {
     box-shadow: none;
   }
 
   .brand-block,
   .panel,
-  .cart-tile {
+  .cart-tile,
+  .role-card {
     padding: 16px;
   }
 
@@ -881,6 +1113,7 @@ button:disabled {
   }
 
   .metric-grid,
+  .role-card-grid,
   .admin-form-grid,
   .choice-grid {
     grid-template-columns: 1fr;
@@ -913,8 +1146,14 @@ button:disabled {
   }
 
   .qr-actions,
-  .managed-cart-row {
+  .managed-cart-row,
+  .status-line {
     grid-template-columns: 1fr;
+  }
+
+  .status-line {
+    display: grid;
+    align-items: start;
   }
 
   .managed-cart-row .ghost-action {
