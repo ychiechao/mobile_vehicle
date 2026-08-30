@@ -1,0 +1,14 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "tablet-cart-repair-system",
+  "main": "dist/server/index.js",
+  "compatibility_date": "2026-08-30",
+  "compatibility_flags": ["nodejs_compat"],
+  "no_bundle": true,
+  "assets": {
+    "directory": "dist/client"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

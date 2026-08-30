@@ -44,7 +44,6 @@ type CartForm = {
 };
 
 const STORAGE_KEY = "tablet-cart-repair-system:carts";
-const publishedOrigin = "https://tablet-cart-repair-system.ychao-ilc.chatgpt.site";
 
 const initialTickets: Ticket[] = [
   {
@@ -194,7 +193,7 @@ export default function Home() {
     tabletCount: "30",
   });
 
-  const origin = runtimeOrigin || publishedOrigin;
+  const origin = runtimeOrigin;
   const selectedCart =
     managedCarts.find((item) => item.id === selectedCartId) ?? managedCarts[0];
   const generatedCart =
@@ -357,6 +356,9 @@ export default function Home() {
 
   async function copyCartUrl(cartItem: Cart) {
     const url = createRepairUrl(cartItem, origin);
+    if (!url) {
+      return;
+    }
 
     try {
       await window.navigator.clipboard.writeText(url);
@@ -627,9 +629,10 @@ export default function Home() {
                 <strong>{item.label}</strong>
                 <small>{item.room}</small>
               </div>
-              <code>{createRepairUrl(item, origin)}</code>
+              <code>{createRepairUrl(item, origin) || "網址載入中"}</code>
               <button
                 className="ghost-action"
+                disabled={!origin}
                 onClick={() => {
                   setGeneratedCartId(item.id);
                   void copyCartUrl(item);
@@ -730,6 +733,13 @@ function CartQrCard({
   useEffect(() => {
     let isActive = true;
 
+    if (!url) {
+      setQrDataUrl("");
+      return () => {
+        isActive = false;
+      };
+    }
+
     void toDataURL(url, {
       errorCorrectionLevel: "M",
       margin: 2,
@@ -763,7 +773,7 @@ function CartQrCard({
           <span>產生中</span>
         )}
       </div>
-      <div className="url-box">{url}</div>
+      <div className="url-box">{url || "網址載入中"}</div>
       <div className="qr-actions">
         <button className="ghost-action" onClick={onCopy} type="button">
           {copied ? "已複製網址" : "複製網址"}
@@ -807,7 +817,14 @@ function Meter({ label, value }: { label: string; value: number }) {
   );
 }
 
-function createRepairUrl(cart: Pick<Cart, "id" | "label" | "room">, origin: string) {
+function createRepairUrl(
+  cart: Pick<Cart, "id" | "label" | "room">,
+  origin: string,
+) {
+  if (!origin) {
+    return "";
+  }
+
   const url = new URL("/", origin);
   url.searchParams.set("cartId", cart.id);
   url.searchParams.set("cart", cart.label);
