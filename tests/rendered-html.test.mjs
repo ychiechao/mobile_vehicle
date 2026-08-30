@@ -35,6 +35,9 @@ test("server-renders the tablet cart repair workspace", async () => {
   assert.match(html, /平板推車報修系統/);
   assert.match(html, /新增報修單/);
   assert.match(html, /案件看板/);
+  assert.match(html, /新增推車並自動產生 QR Code/);
+  assert.match(html, /最新 QR Code/);
+  assert.match(html, /cartId=A3-01/);
   assert.match(html, /推車健康度/);
   assert.match(html, /\/og\.png/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/i);

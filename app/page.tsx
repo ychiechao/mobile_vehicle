@@ -1,9 +1,18 @@
 "use client";
 
-import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { toDataURL } from "qrcode";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 
 type Priority = "高" | "中" | "低";
 type TicketStatus = "待派工" | "維修中" | "待料" | "已完成";
+type SlotStatus = "ok" | "warning" | "offline";
+type CartStatus = "可借用" | "需檢查" | "停用";
 
 type Ticket = {
   id: string;
@@ -23,9 +32,19 @@ type Cart = {
   health: number;
   battery: number;
   offline: number;
-  slots: Array<"ok" | "warning" | "offline">;
-  status: "可借用" | "需檢查" | "停用";
+  slots: SlotStatus[];
+  status: CartStatus;
 };
+
+type CartForm = {
+  id: string;
+  label: string;
+  room: string;
+  tabletCount: string;
+};
+
+const STORAGE_KEY = "tablet-cart-repair-system:carts";
+const publishedOrigin = "https://tablet-cart-repair-system.ychao-ilc.chatgpt.site";
 
 const initialTickets: Ticket[] = [
   {
@@ -70,7 +89,7 @@ const initialTickets: Ticket[] = [
   },
 ];
 
-const carts: Cart[] = [
+const initialCarts: Cart[] = [
   {
     id: "A3-01",
     label: "A 棟 3F",
@@ -154,14 +173,80 @@ const filters: Array<"全部" | TicketStatus> = [
 
 export default function Home() {
   const [tickets, setTickets] = useState(initialTickets);
+  const [managedCarts, setManagedCarts] = useState(initialCarts);
+  const [selectedCartId, setSelectedCartId] = useState(initialCarts[0].id);
   const [filter, setFilter] = useState<(typeof filters)[number]>("全部");
-  const [cart, setCart] = useState(carts[0].label);
-  const [room, setRoom] = useState(carts[0].room);
+  const [room, setRoom] = useState(initialCarts[0].room);
   const [repairType, setRepairType] = useState(repairTypes[0]);
   const [priority, setPriority] = useState<Priority>("中");
   const [issue, setIssue] = useState(
     "第 12 台平板放回推車後未顯示充電，已更換插槽仍無反應。",
   );
+  const [runtimeOrigin, setRuntimeOrigin] = useState("");
+  const [storageReady, setStorageReady] = useState(false);
+  const [copiedCartId, setCopiedCartId] = useState<string | null>(null);
+  const [generatedCartId, setGeneratedCartId] = useState(initialCarts[0].id);
+  const [scanMessage, setScanMessage] = useState("");
+  const [cartForm, setCartForm] = useState<CartForm>({
+    id: "D4-01",
+    label: "D 棟 4F",
+    room: "402 多功能教室",
+    tabletCount: "30",
+  });
+
+  const origin = runtimeOrigin || publishedOrigin;
+  const selectedCart =
+    managedCarts.find((item) => item.id === selectedCartId) ?? managedCarts[0];
+  const generatedCart =
+    managedCarts.find((item) => item.id === generatedCartId) ?? managedCarts[0];
+
+  useEffect(() => {
+    const storedCarts = readStoredCarts();
+    let nextCarts = storedCarts.length > 0 ? storedCarts : initialCarts;
+
+    const params = new URLSearchParams(window.location.search);
+    const cartId = params.get("cartId");
+    const cartLabel = params.get("cart");
+    const cartRoom = params.get("room");
+
+    if (cartId && cartLabel) {
+      const scannedCart: Cart = {
+        id: cartId,
+        label: cartLabel,
+        room: cartRoom || "掃碼帶入位置",
+        health: 100,
+        battery: 100,
+        offline: 0,
+        status: "可借用",
+        slots: createSlots(30),
+      };
+
+      nextCarts = [
+        scannedCart,
+        ...nextCarts.filter((item) => item.id !== scannedCart.id),
+      ];
+      setSelectedCartId(scannedCart.id);
+      setGeneratedCartId(scannedCart.id);
+      setRoom(scannedCart.room);
+      setIssue("");
+      setScanMessage(`${scannedCart.label} 已從 QR Code 帶入報修表單。`);
+    } else if (!nextCarts.some((item) => item.id === initialCarts[0].id)) {
+      setSelectedCartId(nextCarts[0].id);
+      setRoom(nextCarts[0].room);
+    }
+
+    setManagedCarts(nextCarts);
+    setRuntimeOrigin(window.location.origin);
+    setStorageReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!storageReady) {
+      return;
+    }
+
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(managedCarts));
+  }, [managedCarts, storageReady]);
 
   const filteredTickets = useMemo(
     () =>
@@ -182,14 +267,18 @@ export default function Home() {
       {
         label: "高優先級",
         value: tickets
-          .filter((ticket) => ticket.priority === "高" && ticket.status !== "已完成")
+          .filter(
+            (ticket) => ticket.priority === "高" && ticket.status !== "已完成",
+          )
           .length.toString(),
         detail: "需先派工確認",
       },
       {
         label: "可借用推車",
-        value: carts.filter((item) => item.status === "可借用").length.toString(),
-        detail: "全校 15 台",
+        value: managedCarts
+          .filter((item) => item.status === "可借用")
+          .length.toString(),
+        detail: `全校 ${managedCarts.length} 台`,
       },
       {
         label: "平均回應",
@@ -197,14 +286,14 @@ export default function Home() {
         detail: "近 7 日",
       },
     ];
-  }, [tickets]);
+  }, [managedCarts, tickets]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const nextTicket: Ticket = {
       id: `R-2026-0830-${String(tickets.length + 19).padStart(3, "0")}`,
-      cart: `${cart} 平板推車`,
+      cart: `${selectedCart?.label ?? "未指定"} 平板推車`,
       room,
       issue: `${repairType}｜${issue.trim() || "待補充故障描述"}`,
       priority,
@@ -215,6 +304,38 @@ export default function Home() {
 
     setTickets((current) => [nextTicket, ...current]);
     setIssue("");
+  }
+
+  function handleCreateCart(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const id = normalizeCartId(cartForm.id || cartForm.label);
+    const label = cartForm.label.trim() || id;
+    const nextCart: Cart = {
+      id,
+      label,
+      room: cartForm.room.trim() || "待設定位置",
+      health: 100,
+      battery: 100,
+      offline: 0,
+      status: "可借用",
+      slots: createSlots(Number(cartForm.tabletCount)),
+    };
+
+    setManagedCarts((current) => [
+      nextCart,
+      ...current.filter((item) => item.id !== nextCart.id),
+    ]);
+    setSelectedCartId(nextCart.id);
+    setGeneratedCartId(nextCart.id);
+    setRoom(nextCart.room);
+    setScanMessage(`${nextCart.label} 已建立，報修網址與 QR Code 已自動產生。`);
+    setCartForm({
+      id: suggestNextCartId(id),
+      label: "",
+      room: "",
+      tabletCount: cartForm.tabletCount,
+    });
   }
 
   function advanceTicket(id: string) {
@@ -234,6 +355,18 @@ export default function Home() {
     );
   }
 
+  async function copyCartUrl(cartItem: Cart) {
+    const url = createRepairUrl(cartItem, origin);
+
+    try {
+      await window.navigator.clipboard.writeText(url);
+      setCopiedCartId(cartItem.id);
+      window.setTimeout(() => setCopiedCartId(null), 1800);
+    } catch {
+      setCopiedCartId(null);
+    }
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -251,6 +384,8 @@ export default function Home() {
         </div>
       </header>
 
+      {scanMessage && <p className="scan-message">{scanMessage}</p>}
+
       <section className="metric-grid" aria-label="今日概況">
         {metrics.map((metric) => (
           <article className="metric-card" key={metric.label}>
@@ -266,24 +401,26 @@ export default function Home() {
           <PanelHeader
             eyebrow="報修登錄"
             title="新增報修單"
-            action={<span className="status-chip success">第一版</span>}
+            action={<span className="status-chip success">掃碼可帶入</span>}
           />
 
           <form className="repair-form" onSubmit={handleSubmit}>
             <label>
               推車位置
               <select
-                value={cart}
+                value={selectedCartId}
                 onChange={(event) => {
-                  const nextCart = carts.find(
-                    (item) => item.label === event.target.value,
+                  const nextCart = managedCarts.find(
+                    (item) => item.id === event.target.value,
                   );
-                  setCart(event.target.value);
+                  setSelectedCartId(event.target.value);
                   setRoom(nextCart?.room ?? room);
                 }}
               >
-                {carts.map((item) => (
-                  <option key={item.id}>{item.label}</option>
+                {managedCarts.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
                 ))}
               </select>
             </label>
@@ -399,11 +536,118 @@ export default function Home() {
         </section>
       </section>
 
+      <section className="admin-section panel" aria-labelledby="admin-title">
+        <div className="admin-layout">
+          <div>
+            <PanelHeader
+              eyebrow="管理端"
+              title="新增推車並自動產生 QR Code"
+              action={<span className="status-chip success">可列印張貼</span>}
+            />
+            <form className="admin-form" onSubmit={handleCreateCart}>
+              <div className="admin-form-grid">
+                <label>
+                  推車編號
+                  <input
+                    required
+                    value={cartForm.id}
+                    onChange={(event) =>
+                      setCartForm((current) => ({
+                        ...current,
+                        id: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  推車位置
+                  <input
+                    required
+                    placeholder="例如：D 棟 4F"
+                    value={cartForm.label}
+                    onChange={(event) =>
+                      setCartForm((current) => ({
+                        ...current,
+                        label: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  教室或保管位置
+                  <input
+                    required
+                    placeholder="例如：402 多功能教室"
+                    value={cartForm.room}
+                    onChange={(event) =>
+                      setCartForm((current) => ({
+                        ...current,
+                        room: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  平板數量
+                  <input
+                    min="1"
+                    max="60"
+                    type="number"
+                    value={cartForm.tabletCount}
+                    onChange={(event) =>
+                      setCartForm((current) => ({
+                        ...current,
+                        tabletCount: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+              <button className="primary-action" type="submit">
+                新增推車並產生 QR
+              </button>
+            </form>
+          </div>
+
+          {generatedCart && (
+            <CartQrCard
+              cart={generatedCart}
+              copied={copiedCartId === generatedCart.id}
+              onCopy={() => copyCartUrl(generatedCart)}
+              url={createRepairUrl(generatedCart, origin)}
+            />
+          )}
+        </div>
+
+        <div className="managed-cart-list" aria-label="推車 QR Code 清單">
+          {managedCarts.map((item) => (
+            <article className="managed-cart-row" key={item.id}>
+              <div>
+                <span>{item.id}</span>
+                <strong>{item.label}</strong>
+                <small>{item.room}</small>
+              </div>
+              <code>{createRepairUrl(item, origin)}</code>
+              <button
+                className="ghost-action"
+                onClick={() => {
+                  setGeneratedCartId(item.id);
+                  void copyCartUrl(item);
+                }}
+                type="button"
+              >
+                {copiedCartId === item.id ? "已複製" : "複製網址"}
+              </button>
+            </article>
+          ))}
+        </div>
+      </section>
+
       <section className="operations-grid">
         <section className="cart-section" aria-labelledby="cart-title">
           <PanelHeader eyebrow="設備狀態" title="推車健康度" />
           <div className="cart-grid">
-            {carts.map((item) => (
+            {managedCarts.map((item) => (
               <article className="cart-tile" key={item.id}>
                 <div className="cart-tile-header">
                   <div>
@@ -470,6 +714,73 @@ function PanelHeader({
   );
 }
 
+function CartQrCard({
+  cart,
+  copied,
+  onCopy,
+  url,
+}: {
+  cart: Cart;
+  copied: boolean;
+  onCopy: () => void;
+  url: string;
+}) {
+  const [qrDataUrl, setQrDataUrl] = useState("");
+
+  useEffect(() => {
+    let isActive = true;
+
+    void toDataURL(url, {
+      errorCorrectionLevel: "M",
+      margin: 2,
+      scale: 7,
+      color: {
+        dark: "#18201d",
+        light: "#ffffff",
+      },
+    }).then((nextUrl) => {
+      if (isActive) {
+        setQrDataUrl(nextUrl);
+      }
+    });
+
+    return () => {
+      isActive = false;
+    };
+  }, [url]);
+
+  return (
+    <article className="qr-card">
+      <div>
+        <span>最新 QR Code</span>
+        <h3>{cart.label}</h3>
+        <p>{cart.room}</p>
+      </div>
+      <div className="qr-frame">
+        {qrDataUrl ? (
+          <img alt={`${cart.label} 報修 QR Code`} src={qrDataUrl} />
+        ) : (
+          <span>產生中</span>
+        )}
+      </div>
+      <div className="url-box">{url}</div>
+      <div className="qr-actions">
+        <button className="ghost-action" onClick={onCopy} type="button">
+          {copied ? "已複製網址" : "複製網址"}
+        </button>
+        <a
+          aria-disabled={!qrDataUrl}
+          className={qrDataUrl ? "download-link" : "download-link disabled"}
+          download={`${cart.id}-repair-qr.png`}
+          href={qrDataUrl || undefined}
+        >
+          下載 QR
+        </a>
+      </div>
+    </article>
+  );
+}
+
 function PriorityBadge({ priority }: { priority: Priority }) {
   return <span className={`priority-badge priority-${priority}`}>{priority}</span>;
 }
@@ -493,5 +804,79 @@ function Meter({ label, value }: { label: string; value: number }) {
         {value}%
       </progress>
     </div>
+  );
+}
+
+function createRepairUrl(cart: Pick<Cart, "id" | "label" | "room">, origin: string) {
+  const url = new URL("/", origin);
+  url.searchParams.set("cartId", cart.id);
+  url.searchParams.set("cart", cart.label);
+  url.searchParams.set("room", cart.room);
+  url.searchParams.set("source", "qr");
+  return url.toString();
+}
+
+function createSlots(count: number): SlotStatus[] {
+  const safeCount = Number.isFinite(count)
+    ? Math.min(Math.max(Math.round(count), 1), 60)
+    : 30;
+
+  return Array.from({ length: safeCount }, () => "ok");
+}
+
+function normalizeCartId(value: string) {
+  const normalized = value
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^0-9A-Za-z-]/g, "")
+    .toUpperCase();
+
+  return normalized || `CART-${Date.now().toString().slice(-4)}`;
+}
+
+function suggestNextCartId(currentId: string) {
+  const match = currentId.match(/^(.*?)(\d+)$/);
+  if (!match) {
+    return `${currentId}-02`;
+  }
+
+  const [, prefix, numberText] = match;
+  const nextNumber = String(Number(numberText) + 1).padStart(numberText.length, "0");
+  return `${prefix}${nextNumber}`;
+}
+
+function readStoredCarts() {
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    if (!stored) {
+      return [];
+    }
+
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter(isCart);
+  } catch {
+    return [];
+  }
+}
+
+function isCart(value: unknown): value is Cart {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const cart = value as Cart;
+  return (
+    typeof cart.id === "string" &&
+    typeof cart.label === "string" &&
+    typeof cart.room === "string" &&
+    typeof cart.health === "number" &&
+    typeof cart.battery === "number" &&
+    typeof cart.offline === "number" &&
+    Array.isArray(cart.slots) &&
+    typeof cart.status === "string"
   );
 }
