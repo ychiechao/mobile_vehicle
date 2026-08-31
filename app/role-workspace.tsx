@@ -1861,11 +1861,15 @@ function SuperAdminPage({
   const pendingCount = schoolApplications.filter(
     (application) => application.status === "待審核",
   ).length;
+  const accessNotice = getSuperAdminAccessNotice({
+    authLoading,
+    authSession,
+    firebaseReady: isFirebaseConfigured(),
+    isSuperAdmin,
+  });
 
   return (
     <>
-      <MetricGrid metrics={metrics} label="超管平台概況" />
-
       <FirebaseAuthPanel
         authForm={authForm}
         authLoading={authLoading}
@@ -1878,220 +1882,317 @@ function SuperAdminPage({
         onSignOut={onFirebaseSignOut}
       />
 
-      <section className="super-layout">
-        <section
-          className="panel application-review-panel"
-          aria-label="學校申請審核"
-        >
+      {accessNotice ? (
+        <section className="super-guard-panel panel" aria-label="超管登入保護">
           <PanelHeader
-            eyebrow="學校申請"
-            title="學校申請審核"
+            eyebrow={accessNotice.eyebrow}
+            title={accessNotice.title}
             action={
-              <span className="status-chip status-待派工">
-                {pendingCount} 件待審核
+              <span className={accessNotice.badgeClass}>
+                {accessNotice.badge}
               </span>
             }
           />
-          <div className="application-review-list">
-            {schoolApplications.map((application) => {
-              const sheetUrl = getSafeSheetUrl(application.sheetUrl);
+          <div className="empty-state">
+            <strong>{accessNotice.heading}</strong>
+            <p>{accessNotice.detail}</p>
+          </div>
+        </section>
+      ) : (
+        <>
+          <MetricGrid metrics={metrics} label="超管平台概況" />
 
-              return (
-                <article className="application-review-row" key={application.id}>
+          <section className="super-layout">
+            <section
+              className="panel application-review-panel"
+              aria-label="學校申請審核"
+            >
+              <PanelHeader
+                eyebrow="學校申請"
+                title="學校申請審核"
+                action={
+                  <span className="status-chip status-待派工">
+                    {pendingCount} 件待審核
+                  </span>
+                }
+              />
+              <div className="application-review-list">
+                {schoolApplications.map((application) => {
+                  const sheetUrl = getSafeSheetUrl(application.sheetUrl);
+
+                  return (
+                    <article
+                      className="application-review-row"
+                      key={application.id}
+                    >
+                      <div>
+                        <span>{application.id}</span>
+                        <h3>{application.schoolName}</h3>
+                        <p>{application.adminEmail}</p>
+                        <small>{application.submittedAt}</small>
+                      </div>
+                      <div>
+                        <ApplicationStatusBadge status={application.status} />
+                        <p>{application.note}</p>
+                        <a
+                          className="sheet-link"
+                          href={sheetUrl || MAIN_DATABASE_SHEET_URL}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          開啟設備表
+                        </a>
+                      </div>
+                      <div className="application-actions">
+                        <button
+                          className="primary-action"
+                          disabled={application.status === "已啟用"}
+                          onClick={() =>
+                            onUpdateApplicationStatus(application.id, "已啟用")
+                          }
+                          type="button"
+                        >
+                          啟用帳號
+                        </button>
+                        <button
+                          className="ghost-action"
+                          disabled={application.status === "退回補件"}
+                          onClick={() =>
+                            onUpdateApplicationStatus(
+                              application.id,
+                              "退回補件",
+                            )
+                          }
+                          type="button"
+                        >
+                          退回補件
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+
+            <aside
+              className="panel data-source-panel"
+              aria-label="Google Sheet 主資料庫"
+            >
+              <PanelHeader
+                eyebrow="資料庫"
+                title="Google Sheet 主資料庫"
+                action={<span className="status-chip success">已指定</span>}
+              />
+              <div className="status-list">
+                <div className="status-line">
                   <div>
-                    <span>{application.id}</span>
-                    <h3>{application.schoolName}</h3>
-                    <p>{application.adminEmail}</p>
-                    <small>{application.submittedAt}</small>
+                    <strong>超管帳號</strong>
+                    <span>目前身分：超級管理者</span>
                   </div>
+                  <span className="status-chip success">啟用中</span>
+                </div>
+                <div className="status-line">
                   <div>
-                    <ApplicationStatusBadge status={application.status} />
-                    <p>{application.note}</p>
+                    <strong>主資料分頁</strong>
+                    <span>{MAIN_DATABASE_SHEET_NAME}</span>
+                  </div>
+                  <span className="status-chip success">已讀取</span>
+                </div>
+                <div className="status-line">
+                  <div>
+                    <strong>主資料庫網址</strong>
                     <a
                       className="sheet-link"
-                      href={sheetUrl || MAIN_DATABASE_SHEET_URL}
+                      href={MAIN_DATABASE_SHEET_URL}
                       rel="noreferrer"
                       target="_blank"
                     >
-                      開啟設備表
+                      開啟主資料庫
                     </a>
                   </div>
-                  <div className="application-actions">
-                    <button
-                      className="primary-action"
-                      disabled={application.status === "已啟用"}
-                      onClick={() =>
-                        onUpdateApplicationStatus(application.id, "已啟用")
-                      }
-                      type="button"
-                    >
-                      啟用帳號
-                    </button>
-                    <button
-                      className="ghost-action"
-                      disabled={application.status === "退回補件"}
-                      onClick={() =>
-                        onUpdateApplicationStatus(application.id, "退回補件")
-                      }
-                      type="button"
-                    >
-                      退回補件
-                    </button>
+                  <span className="status-chip status-待料">待接寫入</span>
+                </div>
+              </div>
+            </aside>
+          </section>
+
+          <section className="super-layout">
+            <section
+              className="panel school-status-panel"
+              aria-label="各校系統狀態"
+            >
+              <PanelHeader
+                eyebrow="跨校總覽"
+                title="各校系統狀態"
+                action={
+                  <span className="status-chip success">權限與啟用狀態</span>
+                }
+              />
+              <div className="school-table-wrap">
+                <table className="school-table">
+                  <thead>
+                    <tr>
+                      <th>學校</th>
+                      <th>區域</th>
+                      <th>管理者</th>
+                      <th>推車</th>
+                      <th>待處理</th>
+                      <th>高優先</th>
+                      <th>可用率</th>
+                      <th>狀態</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {schoolStatuses.map((school) => (
+                      <tr key={school.id}>
+                        <td>
+                          <strong>{school.name}</strong>
+                          <span>{school.id}</span>
+                        </td>
+                        <td>{school.district}</td>
+                        <td>{school.admins} 位</td>
+                        <td>
+                          {school.carts} 台
+                          <small>{school.warningCarts} 台需檢查</small>
+                        </td>
+                        <td>{school.activeTickets} 件</td>
+                        <td>{school.highPriority} 件</td>
+                        <td>{school.uptime}</td>
+                        <td>
+                          <span className={`status-chip status-${school.status}`}>
+                            {school.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <aside className="panel governance-panel" aria-label="平台治理">
+              <PanelHeader eyebrow="治理" title="平台管理清單" />
+              <div className="status-list">
+                <div className="status-line">
+                  <div>
+                    <strong>全域角色</strong>
+                    <span>超管、學校管理者、使用者</span>
                   </div>
-                </article>
-              );
-            })}
-          </div>
-        </section>
+                  <span className="status-chip success">已建立</span>
+                </div>
+                <div className="status-line">
+                  <div>
+                    <strong>待補管理者</strong>
+                    <span>蘇澳高中尚未設定校內管理員</span>
+                  </div>
+                  <span className="status-chip status-待派工">需處理</span>
+                </div>
+                <div className="status-line">
+                  <div>
+                    <strong>QR 規則</strong>
+                    <span>所有 QR 統一導向使用者頁面</span>
+                  </div>
+                  <span className="status-chip success">已套用</span>
+                </div>
+              </div>
+            </aside>
+          </section>
 
-        <aside className="panel data-source-panel" aria-label="Google Sheet 主資料庫">
-          <PanelHeader
-            eyebrow="資料庫"
-            title="Google Sheet 主資料庫"
-            action={<span className="status-chip success">已指定</span>}
-          />
-          <div className="status-list">
-            <div className="status-line">
-              <div>
-                <strong>超管帳號</strong>
-                <span>目前身分：超級管理者</span>
-              </div>
-              <span className="status-chip success">啟用中</span>
-            </div>
-            <div className="status-line">
-              <div>
-                <strong>主資料分頁</strong>
-                <span>{MAIN_DATABASE_SHEET_NAME}</span>
-              </div>
-              <span className="status-chip success">已讀取</span>
-            </div>
-            <div className="status-line">
-              <div>
-                <strong>主資料庫網址</strong>
-                <a
-                  className="sheet-link"
-                  href={MAIN_DATABASE_SHEET_URL}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  開啟主資料庫
-                </a>
-              </div>
-              <span className="status-chip status-待料">待接寫入</span>
-            </div>
-          </div>
-        </aside>
-      </section>
+          <section className="operations-grid">
+            <TicketBoard
+              filter={filter}
+              setFilter={setFilter}
+              tickets={tickets}
+              title="跨校案件看板"
+              onAdvanceTicket={onAdvanceTicket}
+            />
 
-      <section className="super-layout">
-        <section className="panel school-status-panel" aria-label="各校系統狀態">
-          <PanelHeader
-            eyebrow="跨校總覽"
-            title="各校系統狀態"
-            action={<span className="status-chip success">權限與啟用狀態</span>}
-          />
-          <div className="school-table-wrap">
-            <table className="school-table">
-              <thead>
-                <tr>
-                  <th>學校</th>
-                  <th>區域</th>
-                  <th>管理者</th>
-                  <th>推車</th>
-                  <th>待處理</th>
-                  <th>高優先</th>
-                  <th>可用率</th>
-                  <th>狀態</th>
-                </tr>
-              </thead>
-              <tbody>
-                {schoolStatuses.map((school) => (
-                  <tr key={school.id}>
-                    <td>
-                      <strong>{school.name}</strong>
-                      <span>{school.id}</span>
-                    </td>
-                    <td>{school.district}</td>
-                    <td>{school.admins} 位</td>
-                    <td>
-                      {school.carts} 台
-                      <small>{school.warningCarts} 台需檢查</small>
-                    </td>
-                    <td>{school.activeTickets} 件</td>
-                    <td>{school.highPriority} 件</td>
-                    <td>{school.uptime}</td>
-                    <td>
-                      <span className={`status-chip status-${school.status}`}>
-                        {school.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <aside className="panel governance-panel" aria-label="平台治理">
-          <PanelHeader eyebrow="治理" title="平台管理清單" />
-          <div className="status-list">
-            <div className="status-line">
-              <div>
-                <strong>全域角色</strong>
-                <span>超管、學校管理者、使用者</span>
-              </div>
-              <span className="status-chip success">已建立</span>
-            </div>
-            <div className="status-line">
-              <div>
-                <strong>待補管理者</strong>
-                <span>蘇澳高中尚未設定校內管理員</span>
-              </div>
-              <span className="status-chip status-待派工">需處理</span>
-            </div>
-            <div className="status-line">
-              <div>
-                <strong>QR 規則</strong>
-                <span>所有 QR 統一導向使用者頁面</span>
-              </div>
-              <span className="status-chip success">已套用</span>
-            </div>
-          </div>
-        </aside>
-      </section>
-
-      <section className="operations-grid">
-        <TicketBoard
-          filter={filter}
-          setFilter={setFilter}
-          tickets={tickets}
-          title="跨校案件看板"
-          onAdvanceTicket={onAdvanceTicket}
-        />
-
-        <aside className="panel timeline-panel" aria-label="超管處理建議">
-          <PanelHeader eyebrow="優先事項" title="今日需要追蹤" />
-          <ol className="timeline">
-            <li>
-              <span>權限</span>
-              <strong>補齊蘇澳高中管理者</strong>
-              <p>目前尚無校內管理員，需邀請資訊組或設備負責人。</p>
-            </li>
-            <li>
-              <span>設備</span>
-              <strong>冬山國小異常推車偏高</strong>
-              <p>9 台推車中有 3 台需檢查，建議安排巡檢。</p>
-            </li>
-            <li>
-              <span>服務</span>
-              <strong>確認高優先案件派工</strong>
-              <p>跨校高優先案件目前 3 件，需確認是否已通知窗口。</p>
-            </li>
-          </ol>
-        </aside>
-      </section>
+            <aside className="panel timeline-panel" aria-label="超管處理建議">
+              <PanelHeader eyebrow="優先事項" title="今日需要追蹤" />
+              <ol className="timeline">
+                <li>
+                  <span>權限</span>
+                  <strong>補齊蘇澳高中管理者</strong>
+                  <p>目前尚無校內管理員，需邀請資訊組或設備負責人。</p>
+                </li>
+                <li>
+                  <span>設備</span>
+                  <strong>冬山國小異常推車偏高</strong>
+                  <p>9 台推車中有 3 台需檢查，建議安排巡檢。</p>
+                </li>
+                <li>
+                  <span>服務</span>
+                  <strong>確認高優先案件派工</strong>
+                  <p>跨校高優先案件目前 3 件，需確認是否已通知窗口。</p>
+                </li>
+              </ol>
+            </aside>
+          </section>
+        </>
+      )}
     </>
   );
+}
+
+function getSuperAdminAccessNotice({
+  authLoading,
+  authSession,
+  firebaseReady,
+  isSuperAdmin,
+}: {
+  authLoading: boolean;
+  authSession: AuthSession | null;
+  firebaseReady: boolean;
+  isSuperAdmin: boolean;
+}) {
+  if (authLoading) {
+    return {
+      badge: "確認中",
+      badgeClass: "status-chip status-待料",
+      detail: "登入狀態確認完成前，超管儀表板與跨校資料會保持隱藏。",
+      eyebrow: "登入保護",
+      heading: "正在確認超管登入狀態",
+      title: "請稍候",
+    };
+  }
+
+  if (!firebaseReady) {
+    return {
+      badge: "待設定",
+      badgeClass: "status-chip status-待設定",
+      detail:
+        "Firebase Auth 尚未連線，請先完成 Firebase Web App 設定後再登入超管帳號。",
+      eyebrow: "登入保護",
+      heading: "超管頁面需要先登入",
+      title: "請先完成登入設定",
+    };
+  }
+
+  if (!authSession) {
+    return {
+      badge: "已鎖定",
+      badgeClass: "status-chip status-待派工",
+      detail:
+        "請使用超管信箱登入。登入通過前，不會顯示學校申請、各校狀態或跨校案件。",
+      eyebrow: "登入保護",
+      heading: "超管功能需要登入後才能使用",
+      title: "請先登入超管帳號",
+    };
+  }
+
+  if (!isSuperAdmin) {
+    return {
+      badge: "無權限",
+      badgeClass: "status-chip status-待設定",
+      detail:
+        "目前登入信箱不在超管白名單內，請登出後改用超管信箱登入。",
+      eyebrow: "權限檢查",
+      heading: "此帳號沒有超管權限",
+      title: "無法進入超管功能",
+    };
+  }
+
+  return null;
 }
 
 function RepairPanel({

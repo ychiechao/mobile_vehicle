@@ -661,6 +661,11 @@ button:disabled {
   margin: 18px auto 0;
 }
 
+.super-guard-panel {
+  max-width: 1240px;
+  margin: 18px auto 0;
+}
+
 .auth-form {
   grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
   align-items: end;

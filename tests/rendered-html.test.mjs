@@ -96,14 +96,14 @@ test("server-renders the super admin page", async () => {
   assert.match(html, /超管 Firebase 登入/);
   assert.match(html, /超管白名單/);
   assert.match(html, /ychao@tmail\.ilc\.edu\.tw/);
-  assert.match(html, /學校申請審核/);
-  assert.match(html, /啟用帳號/);
-  assert.match(html, /退回補件/);
-  assert.match(html, /開啟設備表/);
-  assert.match(html, /開啟主資料庫/);
-  assert.match(html, /各校系統狀態/);
-  assert.match(html, /權限與啟用狀態/);
-  assert.match(html, /跨校案件看板/);
+  assert.match(html, /超管頁面需要先登入|超管功能需要登入後才能使用/);
+  assert.doesNotMatch(html, /學校申請審核/);
+  assert.doesNotMatch(html, /退回補件/);
+  assert.doesNotMatch(html, /開啟設備表/);
+  assert.doesNotMatch(html, /開啟主資料庫/);
+  assert.doesNotMatch(html, /各校系統狀態/);
+  assert.doesNotMatch(html, /權限與啟用狀態/);
+  assert.doesNotMatch(html, /跨校案件看板/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/i);
 });
 
