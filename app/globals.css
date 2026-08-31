@@ -675,6 +675,16 @@ button:disabled {
   min-width: 120px;
 }
 
+.google-auth-box {
+  display: flex;
+  align-items: center;
+  margin-top: 18px;
+}
+
+.google-auth-box .primary-action {
+  min-width: 180px;
+}
+
 .auth-account-row {
   display: flex;
   align-items: center;

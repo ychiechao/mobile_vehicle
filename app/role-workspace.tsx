@@ -2,8 +2,10 @@
 
 import {
   createUserWithEmailAndPassword,
+  GoogleAuthProvider,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut,
   type User,
 } from "firebase/auth";
@@ -15,7 +17,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
-import { getFirebaseAuth, isFirebaseConfigured } from "./firebase-client";
+import { getFirebaseAuth, loadFirebaseRuntimeSettings } from "./firebase-client";
 
 type Role = "hub" | "user" | "school-admin" | "super-admin";
 type Priority = "高" | "中" | "低";
@@ -116,8 +118,7 @@ const APPLICATION_STORAGE_KEY = "tablet-cart-repair-system:school-applications";
 const MAIN_DATABASE_SHEET_URL =
   "https://docs.google.com/spreadsheets/d/1baE1-6fXpTfNQT59VdHJ2FuecaSy5OmbR392ODrdaTA/edit?usp=sharing";
 const MAIN_DATABASE_SHEET_NAME = "工作表1";
-const SUPER_ADMIN_EMAIL =
-  process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL ?? "ychao@tmail.ilc.edu.tw";
+const DEFAULT_SUPER_ADMIN_EMAIL = "ychao@tmail.ilc.edu.tw";
 
 const initialTickets: Ticket[] = [
   {
@@ -391,7 +392,11 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     useState<SchoolApplicationForm>(createEmptyApplicationForm());
   const [authForm, setAuthForm] = useState<AuthForm>(createEmptyAuthForm());
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
-  const [authLoading, setAuthLoading] = useState(isFirebaseConfigured());
+  const [authLoading, setAuthLoading] = useState(false);
+  const [firebaseReady, setFirebaseReady] = useState(false);
+  const [superAdminEmail, setSuperAdminEmail] = useState(
+    DEFAULT_SUPER_ADMIN_EMAIL,
+  );
   const [authMessage, setAuthMessage] = useState("");
   const [selectedCartId, setSelectedCartId] = useState(initialCarts[0].id);
   const [filter, setFilter] = useState<(typeof filters)[number]>("全部");
@@ -427,7 +432,7 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
   const generatedCart =
     managedCarts.find((item) => item.id === generatedCartId) ?? managedCarts[0];
   const isSuperAdmin =
-    authSession?.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+    authSession?.email.toLowerCase() === superAdminEmail.toLowerCase();
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -480,16 +485,45 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
   }, []);
 
   useEffect(() => {
-    if (!isFirebaseConfigured()) {
-      return;
-    }
+    let isActive = true;
+    let unsubscribe: (() => void) | undefined;
 
-    const unsubscribe = onAuthStateChanged(getFirebaseAuth(), (user) => {
-      setAuthSession(user ? createAuthSession(user) : null);
-      setAuthLoading(false);
-    });
+    void loadFirebaseRuntimeSettings()
+      .then(async (settings) => {
+        if (!isActive) {
+          return;
+        }
 
-    return unsubscribe;
+        setSuperAdminEmail(settings.superAdminEmail);
+        setFirebaseReady(settings.configured);
+
+        if (!settings.configured) {
+          setAuthLoading(false);
+          return;
+        }
+
+        const auth = await getFirebaseAuth();
+        if (!isActive) {
+          return;
+        }
+
+        unsubscribe = onAuthStateChanged(auth, (user) => {
+          setAuthSession(user ? createAuthSession(user) : null);
+          setAuthLoading(false);
+        });
+      })
+      .catch(() => {
+        if (isActive) {
+          setFirebaseReady(false);
+          setAuthSession(null);
+          setAuthLoading(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+      unsubscribe?.();
+    };
   }, []);
 
   useEffect(() => {
@@ -584,11 +618,12 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     const adminEmail = applicationForm.adminEmail.trim();
     const password = applicationForm.password;
 
-    if (isFirebaseConfigured()) {
+    if (firebaseReady) {
       setAuthLoading(true);
       try {
+        const auth = await getFirebaseAuth();
         const credential = await createUserWithEmailAndPassword(
-          getFirebaseAuth(),
+          auth,
           adminEmail,
           password,
         );
@@ -627,15 +662,16 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
   async function handleFirebaseLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!isFirebaseConfigured()) {
+    if (!firebaseReady) {
       setAuthMessage("Firebase 設定尚未完成，請補上 Web App 設定值。");
       return;
     }
 
     setAuthLoading(true);
     try {
+      const auth = await getFirebaseAuth();
       const credential = await signInWithEmailAndPassword(
-        getFirebaseAuth(),
+        auth,
         authForm.email.trim(),
         authForm.password,
       );
@@ -648,17 +684,51 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     setAuthLoading(false);
   }
 
+  async function handleFirebaseGoogleLogin() {
+    if (!firebaseReady) {
+      setAuthMessage("Firebase 設定尚未完成，請補上 Web App 設定值。");
+      return;
+    }
+
+    setAuthLoading(true);
+    try {
+      const auth = await getFirebaseAuth();
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({
+        login_hint: superAdminEmail,
+        prompt: "select_account",
+      });
+      const credential = await signInWithPopup(auth, provider);
+      const email = credential.user.email ?? "";
+
+      setAuthSession(createAuthSession(credential.user));
+      setAuthMessage(
+        email.toLowerCase() === superAdminEmail.toLowerCase()
+          ? `${email} 已用 Google 登入。`
+          : `${email || "目前帳號"} 已登入，但不是超管白名單帳號。`,
+      );
+    } catch (error) {
+      setAuthMessage(getFirebaseAuthErrorMessage(error));
+    }
+    setAuthLoading(false);
+  }
+
   async function handleFirebaseSignOut() {
-    if (!isFirebaseConfigured()) {
+    if (!firebaseReady) {
       setAuthSession(null);
       return;
     }
 
     setAuthLoading(true);
-    await signOut(getFirebaseAuth());
-    setAuthSession(null);
+    try {
+      const auth = await getFirebaseAuth();
+      await signOut(auth);
+      setAuthSession(null);
+      setAuthMessage("已登出 Firebase。");
+    } catch (error) {
+      setAuthMessage(getFirebaseAuthErrorMessage(error));
+    }
     setAuthLoading(false);
-    setAuthMessage("已登出 Firebase。");
   }
 
   function updateSchoolApplicationStatus(
@@ -908,6 +978,7 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
           deleteCandidateId={deleteCandidateId}
           downloadedCartId={downloadedCartId}
           editingCartId={editingCartId}
+          firebaseReady={firebaseReady}
           filter={filter}
           generatedCart={generatedCart}
           managedCarts={managedCarts}
@@ -920,6 +991,7 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
           setApplicationForm={setApplicationForm}
           setAuthForm={setAuthForm}
           schoolApplications={schoolApplications}
+          superAdminEmail={superAdminEmail}
           tickets={tickets}
           onAdvanceTicket={advanceTicket}
           onBeginEditCart={beginEditCart}
@@ -942,14 +1014,17 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
           authLoading={authLoading}
           authMessage={authMessage}
           authSession={authSession}
+          firebaseReady={firebaseReady}
           filter={filter}
           isSuperAdmin={isSuperAdmin}
           metrics={superMetrics}
           schoolApplications={schoolApplications}
           setAuthForm={setAuthForm}
           setFilter={setFilter}
+          superAdminEmail={superAdminEmail}
           tickets={tickets}
           onAdvanceTicket={advanceTicket}
+          onFirebaseGoogleLogin={handleFirebaseGoogleLogin}
           onFirebaseLogin={handleFirebaseLogin}
           onFirebaseSignOut={handleFirebaseSignOut}
           onUpdateApplicationStatus={updateSchoolApplicationStatus}
@@ -1185,6 +1260,7 @@ function SchoolAdminPage({
   deleteCandidateId,
   downloadedCartId,
   editingCartId,
+  firebaseReady,
   filter,
   generatedCart,
   managedCarts,
@@ -1197,6 +1273,7 @@ function SchoolAdminPage({
   setApplicationForm,
   setAuthForm,
   schoolApplications,
+  superAdminEmail,
   tickets,
   onAdvanceTicket,
   onBeginEditCart,
@@ -1222,6 +1299,7 @@ function SchoolAdminPage({
   deleteCandidateId: string | null;
   downloadedCartId: string | null;
   editingCartId: string | null;
+  firebaseReady: boolean;
   filter: (typeof filters)[number];
   generatedCart: Cart;
   managedCarts: Cart[];
@@ -1236,6 +1314,7 @@ function SchoolAdminPage({
   ) => void;
   setAuthForm: (updater: (current: AuthForm) => AuthForm) => void;
   schoolApplications: SchoolApplication[];
+  superAdminEmail: string;
   tickets: Ticket[];
   onAdvanceTicket: (id: string) => void;
   onBeginEditCart: (cart: Cart) => void;
@@ -1259,9 +1338,12 @@ function SchoolAdminPage({
         authLoading={authLoading}
         authMessage={authMessage}
         authSession={authSession}
+        firebaseReady={firebaseReady}
         isSuperAdmin={false}
+        loginMethod="password"
         panelTitle="學校管理者登入"
         setAuthForm={setAuthForm}
+        superAdminEmail={superAdminEmail}
         onLogin={onFirebaseLogin}
         onSignOut={onFirebaseSignOut}
       />
@@ -1609,9 +1691,13 @@ function FirebaseAuthPanel({
   authLoading,
   authMessage,
   authSession,
+  firebaseReady,
   isSuperAdmin,
+  loginMethod,
   panelTitle,
   setAuthForm,
+  superAdminEmail,
+  onGoogleLogin,
   onLogin,
   onSignOut,
 }: {
@@ -1619,13 +1705,22 @@ function FirebaseAuthPanel({
   authLoading: boolean;
   authMessage: string;
   authSession: AuthSession | null;
+  firebaseReady: boolean;
   isSuperAdmin: boolean;
+  loginMethod: "google" | "password";
   panelTitle: string;
   setAuthForm: (updater: (current: AuthForm) => AuthForm) => void;
+  superAdminEmail: string;
+  onGoogleLogin?: () => void;
   onLogin: (event: FormEvent<HTMLFormElement>) => void;
   onSignOut: () => void;
 }) {
-  const firebaseReady = isFirebaseConfigured();
+  const statusLabel = authLoading
+    ? "確認中"
+    : firebaseReady
+      ? "已連線"
+      : "待設定";
+  const statusClass = firebaseReady ? "status-chip success" : "status-chip";
 
   return (
     <section className="auth-section panel" aria-label={panelTitle}>
@@ -1633,9 +1728,7 @@ function FirebaseAuthPanel({
         eyebrow="Firebase Auth"
         title={panelTitle}
         action={
-          <span className={firebaseReady ? "status-chip success" : "status-chip"}>
-            {firebaseReady ? "已連線" : "待設定"}
-          </span>
+          <span className={statusClass}>{statusLabel}</span>
         }
       />
 
@@ -1655,6 +1748,17 @@ function FirebaseAuthPanel({
             type="button"
           >
             登出
+          </button>
+        </div>
+      ) : loginMethod === "google" ? (
+        <div className="google-auth-box">
+          <button
+            className="primary-action"
+            disabled={!firebaseReady || authLoading}
+            onClick={onGoogleLogin}
+            type="button"
+          >
+            {authLoading ? "確認中" : "使用 Google 登入"}
           </button>
         </div>
       ) : (
@@ -1702,7 +1806,7 @@ function FirebaseAuthPanel({
         <div className="status-line">
           <div>
             <strong>超管白名單</strong>
-            <span>{SUPER_ADMIN_EMAIL}</span>
+            <span>{superAdminEmail}</span>
           </div>
           <span className="status-chip success">已設定</span>
         </div>
@@ -1827,14 +1931,17 @@ function SuperAdminPage({
   authLoading,
   authMessage,
   authSession,
+  firebaseReady,
   filter,
   isSuperAdmin,
   metrics,
   schoolApplications,
   setAuthForm,
   setFilter,
+  superAdminEmail,
   tickets,
   onAdvanceTicket,
+  onFirebaseGoogleLogin,
   onFirebaseLogin,
   onFirebaseSignOut,
   onUpdateApplicationStatus,
@@ -1843,14 +1950,17 @@ function SuperAdminPage({
   authLoading: boolean;
   authMessage: string;
   authSession: AuthSession | null;
+  firebaseReady: boolean;
   filter: (typeof filters)[number];
   isSuperAdmin: boolean;
   metrics: Metric[];
   schoolApplications: SchoolApplication[];
   setAuthForm: (updater: (current: AuthForm) => AuthForm) => void;
   setFilter: (value: (typeof filters)[number]) => void;
+  superAdminEmail: string;
   tickets: Ticket[];
   onAdvanceTicket: (id: string) => void;
+  onFirebaseGoogleLogin: () => void;
   onFirebaseLogin: (event: FormEvent<HTMLFormElement>) => void;
   onFirebaseSignOut: () => void;
   onUpdateApplicationStatus: (
@@ -1864,7 +1974,7 @@ function SuperAdminPage({
   const accessNotice = getSuperAdminAccessNotice({
     authLoading,
     authSession,
-    firebaseReady: isFirebaseConfigured(),
+    firebaseReady,
     isSuperAdmin,
   });
 
@@ -1875,9 +1985,13 @@ function SuperAdminPage({
         authLoading={authLoading}
         authMessage={authMessage}
         authSession={authSession}
+        firebaseReady={firebaseReady}
         isSuperAdmin={isSuperAdmin}
+        loginMethod="google"
         panelTitle="超管 Firebase 登入"
         setAuthForm={setAuthForm}
+        superAdminEmail={superAdminEmail}
+        onGoogleLogin={onFirebaseGoogleLogin}
         onLogin={onFirebaseLogin}
         onSignOut={onFirebaseSignOut}
       />
@@ -2767,7 +2881,9 @@ function getFirebaseAuthErrorMessage(error: unknown) {
     "auth/invalid-email": "信箱格式不正確。",
     "auth/invalid-credential": "登入資料不正確，請確認信箱與密碼。",
     "auth/missing-password": "請輸入密碼。",
-    "auth/operation-not-allowed": "Firebase 尚未啟用 Email/Password 登入。",
+    "auth/operation-not-allowed": "Firebase 尚未啟用這個登入方式。",
+    "auth/popup-blocked": "瀏覽器封鎖了 Google 登入視窗，請允許彈出視窗後再試。",
+    "auth/popup-closed-by-user": "Google 登入視窗已關閉，請再試一次。",
     "auth/unauthorized-domain": "Firebase 尚未允許目前網站網域登入。",
     "auth/weak-password": "密碼強度不足，請至少使用 8 個字元。",
   };
