@@ -44,6 +44,16 @@ type CartForm = {
   tabletCount: string;
 };
 
+type CartEditForm = {
+  label: string;
+  room: string;
+  status: CartStatus;
+  health: string;
+  battery: string;
+  offline: string;
+  tabletCount: string;
+};
+
 type Metric = {
   label: string;
   value: string;
@@ -233,6 +243,7 @@ const schoolStatuses: SchoolStatus[] = [
 
 const repairTypes = ["充電異常", "設備損壞", "網路異常", "借還問題"];
 const priorities: Priority[] = ["高", "中", "低"];
+const cartStatuses: CartStatus[] = ["可借用", "需檢查", "停用"];
 const filters: Array<"全部" | TicketStatus> = [
   "全部",
   "待派工",
@@ -323,6 +334,13 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     room: "402 多功能教室",
     tabletCount: "30",
   });
+  const [editingCartId, setEditingCartId] = useState<string | null>(null);
+  const [cartEditForm, setCartEditForm] = useState<CartEditForm>(
+    createCartEditForm(initialCarts[0]),
+  );
+  const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(
+    null,
+  );
 
   const origin = runtimeOrigin;
   const selectedCart =
@@ -443,6 +461,108 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     });
   }
 
+  function beginEditCart(cart: Cart) {
+    setEditingCartId(cart.id);
+    setCartEditForm(createCartEditForm(cart));
+    setGeneratedCartId(cart.id);
+    setDeleteCandidateId(null);
+  }
+
+  function cancelEditCart() {
+    setEditingCartId(null);
+    setDeleteCandidateId(null);
+  }
+
+  function handleUpdateCart(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!editingCartId) {
+      return;
+    }
+
+    const existingCart = managedCarts.find((item) => item.id === editingCartId);
+    if (!existingCart) {
+      setEditingCartId(null);
+      return;
+    }
+
+    const updatedCart = updateCartFromEditForm(existingCart, cartEditForm);
+    setManagedCarts((current) =>
+      current.map((item) => (item.id === editingCartId ? updatedCart : item)),
+    );
+    setSelectedCartId((current) =>
+      current === editingCartId ? updatedCart.id : current,
+    );
+    setGeneratedCartId(updatedCart.id);
+    setRoom((current) =>
+      selectedCartId === editingCartId ? updatedCart.room : current,
+    );
+    setEditingCartId(null);
+    setDeleteCandidateId(null);
+    setScanMessage(
+      `${updatedCart.label} 已更新，新的報修網址與 QR Code 已同步套用。`,
+    );
+  }
+
+  function updateCartStatus(cartId: string, status: CartStatus) {
+    const existingCart = managedCarts.find((item) => item.id === cartId);
+    if (!existingCart) {
+      return;
+    }
+
+    const updatedCart = applyQuickCartStatus(existingCart, status);
+    setManagedCarts((current) =>
+      current.map((item) => (item.id === cartId ? updatedCart : item)),
+    );
+
+    if (editingCartId === cartId) {
+      setCartEditForm(createCartEditForm(updatedCart));
+    }
+
+    setGeneratedCartId(cartId);
+    setDeleteCandidateId(null);
+    setScanMessage(`${updatedCart.label} 狀態已調整為「${status}」。`);
+  }
+
+  function deleteCart(cartId: string) {
+    if (managedCarts.length <= 1) {
+      setScanMessage("至少要保留一台推車，避免報修入口沒有可選設備。");
+      return;
+    }
+
+    const cartToDelete = managedCarts.find((item) => item.id === cartId);
+    if (!cartToDelete) {
+      return;
+    }
+
+    if (deleteCandidateId !== cartId) {
+      setDeleteCandidateId(cartId);
+      setScanMessage(`再按一次刪除即可移除 ${cartToDelete.label}。`);
+      return;
+    }
+
+    const nextCarts = managedCarts.filter((item) => item.id !== cartId);
+    const fallbackCart = nextCarts[0];
+
+    setManagedCarts(nextCarts);
+
+    if (selectedCartId === cartId) {
+      setSelectedCartId(fallbackCart.id);
+      setRoom(fallbackCart.room);
+    }
+
+    if (generatedCartId === cartId) {
+      setGeneratedCartId(fallbackCart.id);
+    }
+
+    if (editingCartId === cartId) {
+      setEditingCartId(null);
+    }
+
+    setDeleteCandidateId(null);
+    setScanMessage(`${cartToDelete.label} 已刪除。`);
+  }
+
   function advanceTicket(id: string) {
     const statusFlow: Record<TicketStatus, TicketStatus> = {
       待派工: "維修中",
@@ -507,19 +627,28 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
       {activeRole === "school-admin" && (
         <SchoolAdminPage
           cartForm={cartForm}
+          cartEditForm={cartEditForm}
           copiedCartId={copiedCartId}
+          deleteCandidateId={deleteCandidateId}
+          editingCartId={editingCartId}
           filter={filter}
           generatedCart={generatedCart}
           managedCarts={managedCarts}
           metrics={schoolMetrics}
           origin={origin}
           setCartForm={setCartForm}
+          setCartEditForm={setCartEditForm}
           setFilter={setFilter}
           setGeneratedCartId={setGeneratedCartId}
           tickets={tickets}
           onAdvanceTicket={advanceTicket}
+          onBeginEditCart={beginEditCart}
+          onCancelEditCart={cancelEditCart}
           onCopyCartUrl={copyCartUrl}
           onCreateCart={handleCreateCart}
+          onDeleteCart={deleteCart}
+          onUpdateCart={handleUpdateCart}
+          onUpdateCartStatus={updateCartStatus}
         />
       )}
 
@@ -744,34 +873,52 @@ function UserPage({
 
 function SchoolAdminPage({
   cartForm,
+  cartEditForm,
   copiedCartId,
+  deleteCandidateId,
+  editingCartId,
   filter,
   generatedCart,
   managedCarts,
   metrics,
   origin,
   setCartForm,
+  setCartEditForm,
   setFilter,
   setGeneratedCartId,
   tickets,
   onAdvanceTicket,
+  onBeginEditCart,
+  onCancelEditCart,
   onCopyCartUrl,
   onCreateCart,
+  onDeleteCart,
+  onUpdateCart,
+  onUpdateCartStatus,
 }: {
   cartForm: CartForm;
+  cartEditForm: CartEditForm;
   copiedCartId: string | null;
+  deleteCandidateId: string | null;
+  editingCartId: string | null;
   filter: (typeof filters)[number];
   generatedCart: Cart;
   managedCarts: Cart[];
   metrics: Metric[];
   origin: string;
   setCartForm: (updater: (current: CartForm) => CartForm) => void;
+  setCartEditForm: (updater: (current: CartEditForm) => CartEditForm) => void;
   setFilter: (value: (typeof filters)[number]) => void;
   setGeneratedCartId: (value: string) => void;
   tickets: Ticket[];
   onAdvanceTicket: (id: string) => void;
+  onBeginEditCart: (cart: Cart) => void;
+  onCancelEditCart: () => void;
   onCopyCartUrl: (cart: Cart) => void;
   onCreateCart: (event: FormEvent<HTMLFormElement>) => void;
+  onDeleteCart: (cartId: string) => void;
+  onUpdateCart: (event: FormEvent<HTMLFormElement>) => void;
+  onUpdateCartStatus: (cartId: string, status: CartStatus) => void;
 }) {
   return (
     <>
@@ -858,7 +1005,12 @@ function SchoolAdminPage({
           />
         </div>
 
-        <div className="managed-cart-list" aria-label="推車 QR Code 清單">
+        <div className="managed-cart-list" aria-label="推車管理清單">
+          <PanelHeader
+            eyebrow="推車管理清單"
+            title="編輯、刪除與調整推車狀態"
+            action={<span className="status-chip success">本機自動保存</span>}
+          />
           {managedCarts.map((item) => (
             <article className="managed-cart-row" key={item.id}>
               <div>
@@ -866,18 +1018,172 @@ function SchoolAdminPage({
                 <strong>{item.label}</strong>
                 <small>{item.room}</small>
               </div>
+              <label className="inline-status-control">
+                推車狀態
+                <select
+                  value={item.status}
+                  onChange={(event) =>
+                    onUpdateCartStatus(item.id, event.target.value as CartStatus)
+                  }
+                >
+                  {cartStatuses.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <code>{createRepairUrl(item, origin) || "網址載入中"}</code>
-              <button
-                className="ghost-action"
-                disabled={!origin}
-                onClick={() => {
-                  setGeneratedCartId(item.id);
-                  onCopyCartUrl(item);
-                }}
-                type="button"
-              >
-                {copiedCartId === item.id ? "已複製" : "複製網址"}
-              </button>
+              <div className="managed-cart-actions">
+                <button
+                  className="ghost-action"
+                  onClick={() => onBeginEditCart(item)}
+                  type="button"
+                >
+                  編輯推車
+                </button>
+                <button
+                  className="ghost-action"
+                  disabled={!origin}
+                  onClick={() => {
+                    setGeneratedCartId(item.id);
+                    onCopyCartUrl(item);
+                  }}
+                  type="button"
+                >
+                  {copiedCartId === item.id ? "已複製" : "複製網址"}
+                </button>
+                <button
+                  className={
+                    deleteCandidateId === item.id
+                      ? "danger-action pending"
+                      : "danger-action"
+                  }
+                  disabled={managedCarts.length <= 1}
+                  onClick={() => onDeleteCart(item.id)}
+                  type="button"
+                >
+                  {deleteCandidateId === item.id ? "再按一次刪除" : "刪除推車"}
+                </button>
+              </div>
+              {editingCartId === item.id && (
+                <form className="cart-edit-form" onSubmit={onUpdateCart}>
+                  <div className="cart-edit-grid">
+                    <label>
+                      推車位置
+                      <input
+                        required
+                        value={cartEditForm.label}
+                        onChange={(event) =>
+                          setCartEditForm((current) => ({
+                            ...current,
+                            label: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      教室或保管位置
+                      <input
+                        required
+                        value={cartEditForm.room}
+                        onChange={(event) =>
+                          setCartEditForm((current) => ({
+                            ...current,
+                            room: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      推車狀態
+                      <select
+                        value={cartEditForm.status}
+                        onChange={(event) =>
+                          setCartEditForm((current) => ({
+                            ...current,
+                            status: event.target.value as CartStatus,
+                          }))
+                        }
+                      >
+                        {cartStatuses.map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      健康度
+                      <input
+                        min="0"
+                        max="100"
+                        type="number"
+                        value={cartEditForm.health}
+                        onChange={(event) =>
+                          setCartEditForm((current) => ({
+                            ...current,
+                            health: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      平均電量
+                      <input
+                        min="0"
+                        max="100"
+                        type="number"
+                        value={cartEditForm.battery}
+                        onChange={(event) =>
+                          setCartEditForm((current) => ({
+                            ...current,
+                            battery: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      離線設備
+                      <input
+                        min="0"
+                        max="60"
+                        type="number"
+                        value={cartEditForm.offline}
+                        onChange={(event) =>
+                          setCartEditForm((current) => ({
+                            ...current,
+                            offline: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      平板數量
+                      <input
+                        min="1"
+                        max="60"
+                        type="number"
+                        value={cartEditForm.tabletCount}
+                        onChange={(event) =>
+                          setCartEditForm((current) => ({
+                            ...current,
+                            tabletCount: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                  <div className="cart-edit-actions">
+                    <button className="ghost-action" onClick={onCancelEditCart} type="button">
+                      取消
+                    </button>
+                    <button className="primary-action" type="submit">
+                      儲存修改
+                    </button>
+                  </div>
+                </form>
+              )}
             </article>
           ))}
         </div>
@@ -1545,6 +1851,79 @@ function getSuperMetrics(): Metric[] {
   ];
 }
 
+function createCartEditForm(cart: Cart): CartEditForm {
+  return {
+    label: cart.label,
+    room: cart.room,
+    status: cart.status,
+    health: String(cart.health),
+    battery: String(cart.battery),
+    offline: String(cart.offline),
+    tabletCount: String(cart.slots.length),
+  };
+}
+
+function updateCartFromEditForm(cart: Cart, form: CartEditForm): Cart {
+  const tabletCount = clampInteger(
+    form.tabletCount,
+    1,
+    60,
+    cart.slots.length,
+  );
+  const offline = clampInteger(form.offline, 0, tabletCount, cart.offline);
+  const status = isCartStatus(form.status) ? form.status : cart.status;
+
+  return {
+    ...cart,
+    label: form.label.trim() || cart.label,
+    room: form.room.trim() || cart.room,
+    status,
+    health: clampInteger(form.health, 0, 100, cart.health),
+    battery: clampInteger(form.battery, 0, 100, cart.battery),
+    offline,
+    slots: createSlotsForCart(tabletCount, status, offline),
+  };
+}
+
+function applyQuickCartStatus(cart: Cart, status: CartStatus): Cart {
+  const tabletCount = cart.slots.length;
+
+  if (status === "可借用") {
+    return {
+      ...cart,
+      status,
+      health: Math.max(cart.health, 90),
+      battery: Math.max(cart.battery, 80),
+      offline: 0,
+      slots: createSlotsForCart(tabletCount, status, 0),
+    };
+  }
+
+  if (status === "停用") {
+    const offline = Math.min(
+      tabletCount,
+      Math.max(cart.offline, Math.ceil(tabletCount * 0.4)),
+    );
+
+    return {
+      ...cart,
+      status,
+      health: Math.min(cart.health, 35),
+      offline,
+      slots: createSlotsForCart(tabletCount, status, offline),
+    };
+  }
+
+  const offline = Math.min(tabletCount, Math.max(cart.offline, 1));
+  return {
+    ...cart,
+    status,
+    health: Math.min(cart.health, 84),
+    offline,
+    slots: createSlotsForCart(tabletCount, status, offline),
+  };
+}
+
 function createRepairUrl(
   cart: Pick<Cart, "id" | "label" | "room">,
   origin: string,
@@ -1567,6 +1946,47 @@ function createSlots(count: number): SlotStatus[] {
     : 30;
 
   return Array.from({ length: safeCount }, () => "ok");
+}
+
+function createSlotsForCart(
+  count: number,
+  status: CartStatus,
+  offline: number,
+): SlotStatus[] {
+  const safeCount = clampInteger(count, 1, 60, 30);
+  const safeOffline = clampInteger(offline, 0, safeCount, 0);
+  const warningCount =
+    status === "可借用"
+      ? 0
+      : status === "需檢查"
+        ? Math.min(safeCount - safeOffline, Math.max(1, Math.ceil(safeCount * 0.16)))
+        : safeCount - safeOffline;
+
+  return Array.from({ length: safeCount }, (_, index) => {
+    if (index < safeOffline) {
+      return "offline";
+    }
+
+    if (index < safeOffline + warningCount) {
+      return "warning";
+    }
+
+    return "ok";
+  });
+}
+
+function clampInteger(
+  value: number | string,
+  min: number,
+  max: number,
+  fallback: number,
+) {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.min(Math.max(Math.round(parsed), min), max);
 }
 
 function normalizeCartId(value: string) {
@@ -1625,6 +2045,10 @@ function isCart(value: unknown): value is Cart {
     typeof cart.battery === "number" &&
     typeof cart.offline === "number" &&
     Array.isArray(cart.slots) &&
-    typeof cart.status === "string"
+    isCartStatus(cart.status)
   );
+}
+
+function isCartStatus(value: unknown): value is CartStatus {
+  return cartStatuses.includes(value as CartStatus);
 }

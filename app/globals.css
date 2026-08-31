@@ -316,7 +316,8 @@ button:disabled {
 }
 
 .repair-form,
-.admin-form {
+.admin-form,
+.cart-edit-form {
   display: grid;
   gap: 16px;
   margin-top: 20px;
@@ -324,6 +325,8 @@ button:disabled {
 
 .repair-form label,
 .admin-form label,
+.cart-edit-form label,
+.inline-status-control,
 .field-group {
   display: grid;
   gap: 8px;
@@ -335,7 +338,11 @@ button:disabled {
 .repair-form input,
 .repair-form select,
 .repair-form textarea,
-.admin-form input {
+.admin-form input,
+.admin-form select,
+.cart-edit-form input,
+.cart-edit-form select,
+.inline-status-control select {
   width: 100%;
   border: 1px solid var(--line-strong);
   border-radius: 6px;
@@ -349,7 +356,11 @@ button:disabled {
 
 .repair-form input,
 .repair-form select,
-.admin-form input {
+.admin-form input,
+.admin-form select,
+.cart-edit-form input,
+.cart-edit-form select,
+.inline-status-control select {
   height: 44px;
   padding: 0 12px;
 }
@@ -364,7 +375,11 @@ button:disabled {
 .repair-form input:focus,
 .repair-form select:focus,
 .repair-form textarea:focus,
-.admin-form input:focus {
+.admin-form input:focus,
+.admin-form select:focus,
+.cart-edit-form input:focus,
+.cart-edit-form select:focus,
+.inline-status-control select:focus {
   border-color: var(--green);
   box-shadow: 0 0 0 3px rgba(45, 106, 79, 0.14);
 }
@@ -379,6 +394,7 @@ button:disabled {
 .segment-control button,
 .filter-row button,
 .ghost-action,
+.danger-action,
 .ticket-side button,
 .primary-action {
   min-height: 40px;
@@ -399,6 +415,7 @@ button:disabled {
 .segment-control button:hover,
 .filter-row button:hover,
 .ghost-action:hover,
+.danger-action:hover,
 .ticket-side button:hover {
   border-color: #839583;
   background: #f3f6f0;
@@ -721,6 +738,27 @@ button:disabled {
   color: #8a948c;
 }
 
+.danger-action {
+  padding: 0 14px;
+  border-color: #e5b8aa;
+  background: #fff;
+  color: #a7411f;
+  white-space: nowrap;
+}
+
+.danger-action:hover,
+.danger-action.pending {
+  border-color: var(--red);
+  background: var(--red-soft);
+  color: #8d3316;
+}
+
+.danger-action:disabled {
+  border-color: #e3e7df;
+  background: #f0f2ee;
+  color: #8a948c;
+}
+
 .managed-cart-list {
   display: grid;
   gap: 10px;
@@ -729,9 +767,9 @@ button:disabled {
 
 .managed-cart-row {
   display: grid;
-  grid-template-columns: minmax(170px, 0.55fr) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(150px, 0.42fr) 150px minmax(0, 1fr) auto;
   gap: 12px;
-  align-items: center;
+  align-items: start;
   border: 1px solid #e2e6dc;
   border-radius: 8px;
   background: var(--surface-soft);
@@ -753,6 +791,50 @@ button:disabled {
 
 .managed-cart-row code {
   padding: 9px;
+}
+
+.inline-status-control {
+  color: #303b34;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.inline-status-control select {
+  height: 38px;
+  background: #fff;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.managed-cart-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cart-edit-form {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  border-top: 1px solid #e2e6dc;
+  padding-top: 14px;
+}
+
+.cart-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.cart-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cart-edit-actions .primary-action {
+  width: auto;
+  padding: 0 18px;
 }
 
 .operations-grid {
@@ -1078,6 +1160,11 @@ button:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .managed-cart-row,
+  .cart-edit-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .cart-grid {
     grid-template-columns: 1fr;
   }
@@ -1115,6 +1202,7 @@ button:disabled {
   .metric-grid,
   .role-card-grid,
   .admin-form-grid,
+  .cart-edit-grid,
   .choice-grid {
     grid-template-columns: 1fr;
   }
@@ -1151,12 +1239,20 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .managed-cart-actions,
+  .cart-edit-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
   .status-line {
     display: grid;
     align-items: start;
   }
 
-  .managed-cart-row .ghost-action {
+  .managed-cart-row .ghost-action,
+  .managed-cart-row .danger-action,
+  .cart-edit-actions .primary-action {
     width: 100%;
   }
 }
