@@ -26,7 +26,9 @@ project IDs, auth domains, or database URLs in source files.
 Required Cloudflare runtime secrets or environment variables:
 
 - `FIREBASE_API_KEY`
-- `FIREBASE_AUTH_DOMAIN`
+- `FIREBASE_AUTH_DOMAIN` should be the Firebase project auth domain, such as
+  `<project-id>.firebaseapp.com`. The browser config is served with the current
+  app domain as `authDomain` and proxies `/__/auth/*` back to Firebase.
 - `FIREBASE_PROJECT_ID`
 - `SUPER_ADMIN_EMAIL`
 
@@ -40,6 +42,8 @@ Firebase console setup:
 - Enable Authentication sign-in with Email/Password.
 - Enable Authentication sign-in with Google for the super admin page.
 - Add the deployed Worker domain to Authentication authorized domains.
+- Add `https://<deployed-domain>/__/auth/handler` to the Google OAuth web
+  client's authorized redirect URIs when using the proxied auth domain.
 - Restrict the Firebase API key in Google Cloud API & Services Credentials to
   the deployed HTTP referrers and the Firebase APIs used by this app.
 
