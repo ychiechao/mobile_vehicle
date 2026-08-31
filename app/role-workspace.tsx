@@ -2,10 +2,11 @@
 
 import {
   createUserWithEmailAndPassword,
+  getRedirectResult,
   GoogleAuthProvider,
   onAuthStateChanged,
   signInWithEmailAndPassword,
-  signInWithPopup,
+  signInWithRedirect,
   signOut,
   type User,
 } from "firebase/auth";
@@ -507,6 +508,24 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
           return;
         }
 
+        const redirectCredential = await getRedirectResult(auth).catch(
+          (error) => {
+            if (isActive) {
+              setAuthMessage(getFirebaseAuthErrorMessage(error));
+            }
+            return null;
+          },
+        );
+        if (isActive && redirectCredential?.user) {
+          const email = redirectCredential.user.email ?? "";
+          setAuthSession(createAuthSession(redirectCredential.user));
+          setAuthMessage(
+            email.toLowerCase() === settings.superAdminEmail.toLowerCase()
+              ? `${email} 已用 Google 登入。`
+              : `${email || "目前帳號"} 已登入，但不是超管白名單帳號。`,
+          );
+        }
+
         unsubscribe = onAuthStateChanged(auth, (user) => {
           setAuthSession(user ? createAuthSession(user) : null);
           setAuthLoading(false);
@@ -693,24 +712,11 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     setAuthLoading(true);
     try {
       const auth = await getFirebaseAuth();
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({
-        login_hint: superAdminEmail,
-        prompt: "select_account",
-      });
-      const credential = await signInWithPopup(auth, provider);
-      const email = credential.user.email ?? "";
-
-      setAuthSession(createAuthSession(credential.user));
-      setAuthMessage(
-        email.toLowerCase() === superAdminEmail.toLowerCase()
-          ? `${email} 已用 Google 登入。`
-          : `${email || "目前帳號"} 已登入，但不是超管白名單帳號。`,
-      );
+      await signInWithRedirect(auth, createGoogleProvider(superAdminEmail));
     } catch (error) {
       setAuthMessage(getFirebaseAuthErrorMessage(error));
+      setAuthLoading(false);
     }
-    setAuthLoading(false);
   }
 
   async function handleFirebaseSignOut() {
@@ -1758,7 +1764,7 @@ function FirebaseAuthPanel({
             onClick={onGoogleLogin}
             type="button"
           >
-            {authLoading ? "確認中" : "使用 Google 登入"}
+            {authLoading ? "前往 Google" : "使用 Google 登入"}
           </button>
         </div>
       ) : (
@@ -2853,6 +2859,15 @@ function createAuthSession(user: User): AuthSession {
   };
 }
 
+function createGoogleProvider(superAdminEmail: string) {
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({
+    login_hint: superAdminEmail,
+    prompt: "select_account",
+  });
+  return provider;
+}
+
 function createApplicationId(nextIndex: number) {
   return `APP-ILC-${String(nextIndex).padStart(3, "0")}`;
 }
@@ -2884,7 +2899,9 @@ function getFirebaseAuthErrorMessage(error: unknown) {
     "auth/operation-not-allowed": "Firebase 尚未啟用這個登入方式。",
     "auth/popup-blocked": "瀏覽器封鎖了 Google 登入視窗，請允許彈出視窗後再試。",
     "auth/popup-closed-by-user": "Google 登入視窗已關閉，請再試一次。",
-    "auth/unauthorized-domain": "Firebase 尚未允許目前網站網域登入。",
+    "auth/redirect-cancelled-by-user": "Google 登入流程已取消，請再試一次。",
+    "auth/unauthorized-domain":
+      "Firebase 尚未允許目前網站網域登入，請把 Cloudflare 網域加入 Authorized domains。",
     "auth/weak-password": "密碼強度不足，請至少使用 8 個字元。",
   };
 
