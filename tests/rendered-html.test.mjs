@@ -144,6 +144,22 @@ test("serves Firebase config from runtime environment", async () => {
   }
 });
 
+test("starts with no seeded school applications", async () => {
+  const roleWorkspace = await readFile(
+    new URL("../app/role-workspace.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    roleWorkspace,
+    /const initialSchoolApplications: SchoolApplication\[\] = \[\];/,
+  );
+  assert.match(roleWorkspace, /目前尚無學校申請/);
+  assert.match(roleWorkspace, /尚無已啟用學校/);
+  assert.match(roleWorkspace, /尚無追蹤事項/);
+  assert.doesNotMatch(roleWorkspace, /宜蘭示範學校|羅東國小|蘇澳高中|冬山國小/);
+});
+
 test("keeps starter preview code out of the app shell", async () => {
   const [page, roleWorkspace, layout, packageJson] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),

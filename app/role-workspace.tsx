@@ -239,77 +239,7 @@ const initialCarts: Cart[] = [
   },
 ];
 
-const schoolStatuses: SchoolStatus[] = [
-  {
-    id: "SCH-ILC-001",
-    name: "宜蘭國中",
-    district: "宜蘭市",
-    admins: 3,
-    carts: 18,
-    warningCarts: 4,
-    activeTickets: 9,
-    highPriority: 2,
-    uptime: "99.8%",
-    status: "正常",
-  },
-  {
-    id: "SCH-ILC-014",
-    name: "羅東國小",
-    district: "羅東鎮",
-    admins: 2,
-    carts: 12,
-    warningCarts: 1,
-    activeTickets: 3,
-    highPriority: 0,
-    uptime: "99.9%",
-    status: "正常",
-  },
-  {
-    id: "SCH-ILC-028",
-    name: "冬山國小",
-    district: "冬山鄉",
-    admins: 1,
-    carts: 9,
-    warningCarts: 3,
-    activeTickets: 6,
-    highPriority: 1,
-    uptime: "98.7%",
-    status: "需協助",
-  },
-  {
-    id: "SCH-ILC-041",
-    name: "蘇澳高中",
-    district: "蘇澳鎮",
-    admins: 0,
-    carts: 7,
-    warningCarts: 0,
-    activeTickets: 1,
-    highPriority: 0,
-    uptime: "待啟用",
-    status: "待設定",
-  },
-];
-
-const initialSchoolApplications: SchoolApplication[] = [
-  {
-    id: "APP-ILC-001",
-    schoolName: "宜蘭示範學校",
-    adminEmail: "school-admin@example.edu.tw",
-    sheetUrl: MAIN_DATABASE_SHEET_URL,
-    submittedAt: "剛剛",
-    status: "待審核",
-    note: "等待超管啟用帳號",
-  },
-  {
-    id: "APP-ILC-002",
-    schoolName: "羅東國小",
-    adminEmail: "ict-admin@example.edu.tw",
-    sheetUrl: MAIN_DATABASE_SHEET_URL,
-    submittedAt: "昨日 15:30",
-    status: "已啟用",
-    note: "帳號已啟用，設備表已登錄",
-  },
-];
+const initialSchoolApplications: SchoolApplication[] = [];
 
 const repairTypes = ["充電異常", "設備損壞", "網路異常", "借還問題"];
 const priorities: Priority[] = ["高", "中", "低"];
@@ -378,7 +308,7 @@ const roleCopy: Record<
       "超級管理者可審核學校端申請、啟用管理者帳號，並追蹤各校設備表與跨校維修案件。",
     cardLabel: "超管帳號",
     cardTitle: "主資料庫已指定",
-    cardDetail: "學校申請會先進入待審核清單，由超管啟用。",
+    cardDetail: "目前尚無學校申請，學校端送出後才會進入待審核清單。",
   },
 };
 
@@ -439,10 +369,7 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
       const storedCarts = readStoredCarts();
       const storedApplications = readStoredSchoolApplications();
       let nextCarts = storedCarts.length > 0 ? storedCarts : initialCarts;
-      const nextApplications =
-        storedApplications.length > 0
-          ? storedApplications
-          : initialSchoolApplications;
+      const nextApplications = storedApplications;
 
       const params = new URLSearchParams(window.location.search);
       const cartId = params.get("cartId");
@@ -1019,7 +946,6 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
           setAuthForm={setAuthForm}
           setFilter={setFilter}
           superAdminEmail={superAdminEmail}
-          tickets={tickets}
           onAdvanceTicket={advanceTicket}
           onFirebaseGoogleLogin={handleFirebaseGoogleLogin}
           onFirebaseLogin={handleFirebaseLogin}
@@ -1907,15 +1833,22 @@ function SchoolApplicationPanel({
           <span>申請狀態</span>
           <h3>等待超管啟用</h3>
           <div className="application-list">
-            {recentApplications.map((application) => (
-              <article className="application-mini-row" key={application.id}>
-                <div>
-                  <strong>{application.schoolName}</strong>
-                  <small>{application.adminEmail}</small>
-                </div>
-                <ApplicationStatusBadge status={application.status} />
-              </article>
-            ))}
+            {recentApplications.length === 0 ? (
+              <div className="empty-state">
+                <strong>尚無送出紀錄</strong>
+                <p>送出申請後，最新狀態會顯示在這裡。</p>
+              </div>
+            ) : (
+              recentApplications.map((application) => (
+                <article className="application-mini-row" key={application.id}>
+                  <div>
+                    <strong>{application.schoolName}</strong>
+                    <small>{application.adminEmail}</small>
+                  </div>
+                  <ApplicationStatusBadge status={application.status} />
+                </article>
+              ))
+            )}
           </div>
         </aside>
       </div>
@@ -1936,7 +1869,6 @@ function SuperAdminPage({
   setAuthForm,
   setFilter,
   superAdminEmail,
-  tickets,
   onAdvanceTicket,
   onFirebaseGoogleLogin,
   onFirebaseLogin,
@@ -1955,7 +1887,6 @@ function SuperAdminPage({
   setAuthForm: (updater: (current: AuthForm) => AuthForm) => void;
   setFilter: (value: (typeof filters)[number]) => void;
   superAdminEmail: string;
-  tickets: Ticket[];
   onAdvanceTicket: (id: string) => void;
   onFirebaseGoogleLogin: () => void;
   onFirebaseLogin: (event: FormEvent<HTMLFormElement>) => void;
@@ -1968,6 +1899,11 @@ function SuperAdminPage({
   const pendingCount = schoolApplications.filter(
     (application) => application.status === "待審核",
   ).length;
+  const enabledCount = schoolApplications.filter(
+    (application) => application.status === "已啟用",
+  ).length;
+  const schoolStatusRows = getSchoolStatusRows(schoolApplications);
+  const crossSchoolTickets: Ticket[] = [];
   const accessNotice = getSuperAdminAccessNotice({
     authLoading,
     authSession,
@@ -2028,60 +1964,70 @@ function SuperAdminPage({
                 }
               />
               <div className="application-review-list">
-                {schoolApplications.map((application) => {
-                  const sheetUrl = getSafeSheetUrl(application.sheetUrl);
+                {schoolApplications.length === 0 ? (
+                  <div className="empty-state">
+                    <strong>目前尚無學校申請</strong>
+                    <p>
+                      學校管理者送出信箱、密碼與設備 Google Sheet
+                      後，申請才會出現在這裡。
+                    </p>
+                  </div>
+                ) : (
+                  schoolApplications.map((application) => {
+                    const sheetUrl = getSafeSheetUrl(application.sheetUrl);
 
-                  return (
-                    <article
-                      className="application-review-row"
-                      key={application.id}
-                    >
-                      <div>
-                        <span>{application.id}</span>
-                        <h3>{application.schoolName}</h3>
-                        <p>{application.adminEmail}</p>
-                        <small>{application.submittedAt}</small>
-                      </div>
-                      <div>
-                        <ApplicationStatusBadge status={application.status} />
-                        <p>{application.note}</p>
-                        <a
-                          className="sheet-link"
-                          href={sheetUrl || MAIN_DATABASE_SHEET_URL}
-                          rel="noreferrer"
-                          target="_blank"
-                        >
-                          開啟設備表
-                        </a>
-                      </div>
-                      <div className="application-actions">
-                        <button
-                          className="primary-action"
-                          disabled={application.status === "已啟用"}
-                          onClick={() =>
-                            onUpdateApplicationStatus(application.id, "已啟用")
-                          }
-                          type="button"
-                        >
-                          啟用帳號
-                        </button>
-                        <button
-                          className="ghost-action"
-                          disabled={application.status === "退回補件"}
-                          onClick={() =>
-                            onUpdateApplicationStatus(
-                              application.id,
-                              "退回補件",
-                            )
-                          }
-                          type="button"
-                        >
-                          退回補件
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })}
+                    return (
+                      <article
+                        className="application-review-row"
+                        key={application.id}
+                      >
+                        <div>
+                          <span>{application.id}</span>
+                          <h3>{application.schoolName}</h3>
+                          <p>{application.adminEmail}</p>
+                          <small>{application.submittedAt}</small>
+                        </div>
+                        <div>
+                          <ApplicationStatusBadge status={application.status} />
+                          <p>{application.note}</p>
+                          <a
+                            className="sheet-link"
+                            href={sheetUrl || MAIN_DATABASE_SHEET_URL}
+                            rel="noreferrer"
+                            target="_blank"
+                          >
+                            開啟設備表
+                          </a>
+                        </div>
+                        <div className="application-actions">
+                          <button
+                            className="primary-action"
+                            disabled={application.status === "已啟用"}
+                            onClick={() =>
+                              onUpdateApplicationStatus(application.id, "已啟用")
+                            }
+                            type="button"
+                          >
+                            啟用帳號
+                          </button>
+                          <button
+                            className="ghost-action"
+                            disabled={application.status === "退回補件"}
+                            onClick={() =>
+                              onUpdateApplicationStatus(
+                                application.id,
+                                "退回補件",
+                              )
+                            }
+                            type="button"
+                          >
+                            退回補件
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })
+                )}
               </div>
             </section>
 
@@ -2136,49 +2082,63 @@ function SuperAdminPage({
                 eyebrow="跨校總覽"
                 title="各校系統狀態"
                 action={
-                  <span className="status-chip success">權限與啟用狀態</span>
+                  <span className="status-chip success">
+                    {enabledCount} 校已啟用
+                  </span>
                 }
               />
-              <div className="school-table-wrap">
-                <table className="school-table">
-                  <thead>
-                    <tr>
-                      <th>學校</th>
-                      <th>區域</th>
-                      <th>管理者</th>
-                      <th>推車</th>
-                      <th>待處理</th>
-                      <th>高優先</th>
-                      <th>可用率</th>
-                      <th>狀態</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {schoolStatuses.map((school) => (
-                      <tr key={school.id}>
-                        <td>
-                          <strong>{school.name}</strong>
-                          <span>{school.id}</span>
-                        </td>
-                        <td>{school.district}</td>
-                        <td>{school.admins} 位</td>
-                        <td>
-                          {school.carts} 台
-                          <small>{school.warningCarts} 台需檢查</small>
-                        </td>
-                        <td>{school.activeTickets} 件</td>
-                        <td>{school.highPriority} 件</td>
-                        <td>{school.uptime}</td>
-                        <td>
-                          <span className={`status-chip status-${school.status}`}>
-                            {school.status}
-                          </span>
-                        </td>
+              {schoolStatusRows.length === 0 ? (
+                <div className="empty-state">
+                  <strong>尚無已啟用學校</strong>
+                  <p>
+                    學校申請通過後，這裡才會顯示該校設備表讀取狀態、
+                    推車數與管理者狀態。
+                  </p>
+                </div>
+              ) : (
+                <div className="school-table-wrap">
+                  <table className="school-table">
+                    <thead>
+                      <tr>
+                        <th>學校</th>
+                        <th>區域</th>
+                        <th>管理者</th>
+                        <th>推車</th>
+                        <th>待處理</th>
+                        <th>高優先</th>
+                        <th>可用率</th>
+                        <th>狀態</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {schoolStatusRows.map((school) => (
+                        <tr key={school.id}>
+                          <td>
+                            <strong>{school.name}</strong>
+                            <span>{school.id}</span>
+                          </td>
+                          <td>{school.district}</td>
+                          <td>{school.admins} 位</td>
+                          <td>
+                            {school.carts} 台
+                            <small>{school.warningCarts} 台需檢查</small>
+                          </td>
+                          <td>{school.activeTickets} 件</td>
+                          <td>{school.highPriority} 件</td>
+                          <td>{school.uptime}</td>
+                          <td>
+                            <span
+                              className={`status-chip status-${school.status}`}
+                            >
+                              {school.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </section>
 
             <aside className="panel governance-panel" aria-label="平台治理">
@@ -2194,9 +2154,15 @@ function SuperAdminPage({
                 <div className="status-line">
                   <div>
                     <strong>待補管理者</strong>
-                    <span>蘇澳高中尚未設定校內管理員</span>
+                    <span>
+                      {enabledCount === 0
+                        ? "尚無學校帳號啟用"
+                        : "依各校設備表檢查校內管理員"}
+                    </span>
                   </div>
-                  <span className="status-chip status-待派工">需處理</span>
+                  <span className="status-chip status-待派工">
+                    {enabledCount === 0 ? "等待申請" : "需處理"}
+                  </span>
                 </div>
                 <div className="status-line">
                   <div>
@@ -2213,30 +2179,34 @@ function SuperAdminPage({
             <TicketBoard
               filter={filter}
               setFilter={setFilter}
-              tickets={tickets}
+              tickets={crossSchoolTickets}
               title="跨校案件看板"
               onAdvanceTicket={onAdvanceTicket}
             />
 
             <aside className="panel timeline-panel" aria-label="超管處理建議">
               <PanelHeader eyebrow="優先事項" title="今日需要追蹤" />
-              <ol className="timeline">
-                <li>
-                  <span>權限</span>
-                  <strong>補齊蘇澳高中管理者</strong>
-                  <p>目前尚無校內管理員，需邀請資訊組或設備負責人。</p>
-                </li>
-                <li>
-                  <span>設備</span>
-                  <strong>冬山國小異常推車偏高</strong>
-                  <p>9 台推車中有 3 台需檢查，建議安排巡檢。</p>
-                </li>
-                <li>
-                  <span>服務</span>
-                  <strong>確認高優先案件派工</strong>
-                  <p>跨校高優先案件目前 3 件，需確認是否已通知窗口。</p>
-                </li>
-              </ol>
+              {schoolApplications.length === 0 ? (
+                <div className="empty-state">
+                  <strong>尚無追蹤事項</strong>
+                  <p>
+                    學校端送出申請後，這裡會整理待審核、啟用與資料接入提醒。
+                  </p>
+                </div>
+              ) : (
+                <ol className="timeline">
+                  <li>
+                    <span>審核</span>
+                    <strong>{pendingCount} 件學校申請待確認</strong>
+                    <p>請確認管理者信箱與學校設備 Google Sheet 權限。</p>
+                  </li>
+                  <li>
+                    <span>資料</span>
+                    <strong>{enabledCount} 校已啟用</strong>
+                    <p>設備表讀寫功能接上後，跨校狀態會從主資料庫同步。</p>
+                  </li>
+                </ol>
+              )}
             </aside>
           </section>
         </>
@@ -2489,31 +2459,42 @@ function TicketBoard({
       </div>
 
       <div className="ticket-list">
-        {filteredTickets.map((ticket) => (
-          <article className="ticket-row" key={ticket.id}>
-            <div className="ticket-main">
-              <div className="ticket-meta">
-                <span>{ticket.id}</span>
-                <PriorityBadge priority={ticket.priority} />
-                <StatusBadge status={ticket.status} />
+        {filteredTickets.length === 0 ? (
+          <div className="empty-state">
+            <strong>
+              {filter === "全部" ? "目前沒有案件" : "沒有符合篩選的案件"}
+            </strong>
+            <p>
+              新案件建立或同步進主資料庫後，會依狀態出現在這個看板。
+            </p>
+          </div>
+        ) : (
+          filteredTickets.map((ticket) => (
+            <article className="ticket-row" key={ticket.id}>
+              <div className="ticket-main">
+                <div className="ticket-meta">
+                  <span>{ticket.id}</span>
+                  <PriorityBadge priority={ticket.priority} />
+                  <StatusBadge status={ticket.status} />
+                </div>
+                <h3>{ticket.cart}</h3>
+                <p>{ticket.issue}</p>
               </div>
-              <h3>{ticket.cart}</h3>
-              <p>{ticket.issue}</p>
-            </div>
-            <div className="ticket-side">
-              <span>{ticket.room}</span>
-              <span>{ticket.reportedAt}</span>
-              <strong>{ticket.owner}</strong>
-              <button
-                disabled={ticket.status === "已完成"}
-                onClick={() => onAdvanceTicket(ticket.id)}
-                type="button"
-              >
-                {ticket.status === "已完成" ? "已結案" : "更新進度"}
-              </button>
-            </div>
-          </article>
-        ))}
+              <div className="ticket-side">
+                <span>{ticket.room}</span>
+                <span>{ticket.reportedAt}</span>
+                <strong>{ticket.owner}</strong>
+                <button
+                  disabled={ticket.status === "已完成"}
+                  onClick={() => onAdvanceTicket(ticket.id)}
+                  type="button"
+                >
+                  {ticket.status === "已完成" ? "已結案" : "更新進度"}
+                </button>
+              </div>
+            </article>
+          ))
+        )}
       </div>
     </section>
   );
@@ -2778,16 +2759,20 @@ function getUserMetrics(tickets: Ticket[], carts: Cart[]): Metric[] {
 }
 
 function getSuperMetrics(applications: SchoolApplication[]): Metric[] {
-  const activeTickets = schoolStatuses.reduce(
+  const schoolStatusRows = getSchoolStatusRows(applications);
+  const activeTickets = schoolStatusRows.reduce(
     (sum, school) => sum + school.activeTickets,
     0,
   );
-  const warningCarts = schoolStatuses.reduce(
+  const warningCarts = schoolStatusRows.reduce(
     (sum, school) => sum + school.warningCarts,
     0,
   );
-  const totalCarts = schoolStatuses.reduce((sum, school) => sum + school.carts, 0);
-  const highPriority = schoolStatuses.reduce(
+  const totalCarts = schoolStatusRows.reduce(
+    (sum, school) => sum + school.carts,
+    0,
+  );
+  const highPriority = schoolStatusRows.reduce(
     (sum, school) => sum + school.highPriority,
     0,
   );
@@ -2825,6 +2810,25 @@ function getSuperMetrics(applications: SchoolApplication[]): Metric[] {
       detail: "今日需追蹤",
     },
   ];
+}
+
+function getSchoolStatusRows(
+  applications: SchoolApplication[],
+): SchoolStatus[] {
+  return applications
+    .filter((application) => application.status === "已啟用")
+    .map((application) => ({
+      id: application.id.replace(/^APP-/, "SCH-"),
+      name: application.schoolName,
+      district: "待同步",
+      admins: 1,
+      carts: 0,
+      warningCarts: 0,
+      activeTickets: 0,
+      highPriority: 0,
+      uptime: "待同步",
+      status: "待設定",
+    }));
 }
 
 function createEmptyApplicationForm(): SchoolApplicationForm {
@@ -3106,10 +3110,19 @@ function readStoredSchoolApplications() {
       return [];
     }
 
-    return parsed.filter(isSchoolApplication);
+    return parsed
+      .filter(isSchoolApplication)
+      .filter((application) => !isSeedSchoolApplication(application));
   } catch {
     return [];
   }
+}
+
+function isSeedSchoolApplication(application: SchoolApplication) {
+  return (
+    application.adminEmail === "school-admin@example.edu.tw" ||
+    application.adminEmail === "ict-admin@example.edu.tw"
+  );
 }
 
 function isCart(value: unknown): value is Cart {
