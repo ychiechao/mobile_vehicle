@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  createUserWithEmailAndPassword,
   GoogleAuthProvider,
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -79,8 +78,6 @@ type SchoolApplication = {
 
 type SchoolApplicationForm = {
   schoolName: string;
-  adminEmail: string;
-  password: string;
   sheetUrl: string;
 };
 
@@ -296,10 +293,10 @@ const roleCopy: Record<
     eyebrow: "各校系統管理者頁面",
     title: "學校申請、推車與 QR Code 管理",
     description:
-      "學校端先以信箱、密碼與學校設備 Google Sheet 送出申請，超管啟用後再進入推車與案件管理。",
+      "學校端先用 Google 帳號驗證，再貼上學校設備 Google Sheet 送出申請，超管啟用後再進入推車與案件管理。",
     cardLabel: "帳號流程",
     cardTitle: "等待超管啟用",
-    cardDetail: "啟用後即可新增推車、產生 QR Code 並管理維修案件。",
+    cardDetail: "Google 帳號與 Sheet 網址都完成後，才會送出申請。",
   },
   "super-admin": {
     eyebrow: "超管頁面",
@@ -542,26 +539,17 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     }
 
     const schoolName = applicationForm.schoolName.trim();
-    const adminEmail = applicationForm.adminEmail.trim();
-    const password = applicationForm.password;
+    const adminEmail = authSession?.email.trim() ?? "";
 
-    if (firebaseReady) {
-      setAuthLoading(true);
-      try {
-        const auth = await getFirebaseAuth();
-        const credential = await createUserWithEmailAndPassword(
-          auth,
-          adminEmail,
-          password,
-        );
-        setAuthSession(createAuthSession(credential.user));
-        setAuthMessage(`${adminEmail} 已建立 Firebase 帳號。`);
-      } catch (error) {
-        setAuthMessage(getFirebaseAuthErrorMessage(error));
-        setAuthLoading(false);
-        return;
-      }
-      setAuthLoading(false);
+    if (!schoolName) {
+      setScanMessage("請輸入學校名稱。");
+      return;
+    }
+
+    if (!authSession || !adminEmail || adminEmail === "未提供信箱") {
+      setAuthMessage("請先使用 Google 帳號驗證，系統會用登入信箱送出申請。");
+      setScanMessage("學校端申請需要先完成 Google 帳號驗證。");
+      return;
     }
 
     const nextApplication: SchoolApplication = {
@@ -571,7 +559,7 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
       sheetUrl: safeSheetUrl,
       submittedAt: "剛剛",
       status: "待審核",
-      note: "等待超管啟用帳號",
+      note: "Google 帳號已驗證，等待超管啟用",
     };
 
     setSchoolApplications((current) => [
@@ -583,6 +571,7 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
       ),
     ]);
     setApplicationForm(createEmptyApplicationForm());
+    setAuthMessage(`${adminEmail} 已完成 Google 驗證，申請已送出。`);
     setScanMessage(`${schoolName} 已送出申請，等待超管啟用帳號。`);
   }
 
@@ -611,7 +600,28 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     setAuthLoading(false);
   }
 
-  async function handleFirebaseGoogleLogin() {
+  async function handleSchoolGoogleLogin() {
+    if (!firebaseReady) {
+      setAuthMessage("Firebase 設定尚未完成，請補上 Web App 設定值。");
+      return;
+    }
+
+    setAuthLoading(true);
+    try {
+      const auth = await getFirebaseAuth();
+      const credential = await signInWithPopup(auth, createGoogleProvider());
+      const email = credential.user.email ?? "";
+      setAuthSession(createAuthSession(credential.user));
+      setAuthMessage(
+        `${email || "目前帳號"} 已完成 Google 驗證，請貼上學校設備 Google Sheet 網址。`,
+      );
+    } catch (error) {
+      setAuthMessage(getFirebaseAuthErrorMessage(error));
+    }
+    setAuthLoading(false);
+  }
+
+  async function handleSuperAdminGoogleLogin() {
     if (!firebaseReady) {
       setAuthMessage("Firebase 設定尚未完成，請補上 Web App 設定值。");
       return;
@@ -924,6 +934,7 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
           onCreateCart={handleCreateCart}
           onDeleteCart={deleteCart}
           onDownloadCartQr={downloadCartQr}
+          onFirebaseGoogleLogin={handleSchoolGoogleLogin}
           onFirebaseLogin={handleFirebaseLogin}
           onFirebaseSignOut={handleFirebaseSignOut}
           onSubmitSchoolApplication={handleSubmitSchoolApplication}
@@ -947,7 +958,7 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
           setFilter={setFilter}
           superAdminEmail={superAdminEmail}
           onAdvanceTicket={advanceTicket}
-          onFirebaseGoogleLogin={handleFirebaseGoogleLogin}
+          onFirebaseGoogleLogin={handleSuperAdminGoogleLogin}
           onFirebaseLogin={handleFirebaseLogin}
           onFirebaseSignOut={handleFirebaseSignOut}
           onUpdateApplicationStatus={updateSchoolApplicationStatus}
@@ -1002,7 +1013,7 @@ function HubPage({ metrics, carts }: { metrics: Metric[]; carts: Cart[] }) {
           href="/school-admin"
           label="各校系統管理者頁面"
           title="申請啟用與推車管理"
-          description="學校資訊組先送出信箱、密碼與設備 Google Sheet，超管啟用後再管理推車與案件。"
+          description="學校資訊組先完成 Google 帳號驗證並貼上設備 Google Sheet，超管啟用後再管理推車與案件。"
         />
         <RoleEntry
           href="/super-admin"
@@ -1020,7 +1031,10 @@ function HubPage({ metrics, carts }: { metrics: Metric[]; carts: Cart[] }) {
           <ol className="flow-list">
             <li>
               <strong>學校端送出使用申請</strong>
-              <p>學校管理者提供信箱、密碼與學校設備 Google Sheet 網址。</p>
+              <p>
+                學校管理者使用 Google 帳號驗證，並提供學校設備 Google Sheet
+                網址。
+              </p>
             </li>
             <li>
               <strong>超管啟用學校帳號</strong>
@@ -1205,6 +1219,7 @@ function SchoolAdminPage({
   onCreateCart,
   onDeleteCart,
   onDownloadCartQr,
+  onFirebaseGoogleLogin,
   onFirebaseLogin,
   onFirebaseSignOut,
   onSubmitSchoolApplication,
@@ -1246,6 +1261,7 @@ function SchoolAdminPage({
   onCreateCart: (event: FormEvent<HTMLFormElement>) => void;
   onDeleteCart: (cartId: string) => void;
   onDownloadCartQr: (cart: Cart) => void;
+  onFirebaseGoogleLogin: () => void;
   onFirebaseLogin: (event: FormEvent<HTMLFormElement>) => void;
   onFirebaseSignOut: () => void;
   onSubmitSchoolApplication: (event: FormEvent<HTMLFormElement>) => void;
@@ -1263,10 +1279,12 @@ function SchoolAdminPage({
         authSession={authSession}
         firebaseReady={firebaseReady}
         isSuperAdmin={false}
-        loginMethod="password"
-        panelTitle="學校管理者登入"
+        loginMethod="google"
+        panelTitle="學校 Google 帳號驗證"
         setAuthForm={setAuthForm}
         superAdminEmail={superAdminEmail}
+        usage="school"
+        onGoogleLogin={onFirebaseGoogleLogin}
         onLogin={onFirebaseLogin}
         onSignOut={onFirebaseSignOut}
       />
@@ -1274,6 +1292,7 @@ function SchoolAdminPage({
       <SchoolApplicationPanel
         applicationForm={applicationForm}
         applications={schoolApplications}
+        authSession={authSession}
         setApplicationForm={setApplicationForm}
         onSubmit={onSubmitSchoolApplication}
       />
@@ -1620,6 +1639,7 @@ function FirebaseAuthPanel({
   panelTitle,
   setAuthForm,
   superAdminEmail,
+  usage = "super",
   onGoogleLogin,
   onLogin,
   onSignOut,
@@ -1634,6 +1654,7 @@ function FirebaseAuthPanel({
   panelTitle: string;
   setAuthForm: (updater: (current: AuthForm) => AuthForm) => void;
   superAdminEmail: string;
+  usage?: "school" | "super";
   onGoogleLogin?: () => void;
   onLogin: (event: FormEvent<HTMLFormElement>) => void;
   onSignOut: () => void;
@@ -1644,6 +1665,25 @@ function FirebaseAuthPanel({
       ? "已連線"
       : "待設定";
   const statusClass = firebaseReady ? "status-chip success" : "status-chip";
+  const accountRoleLabel =
+    usage === "super"
+      ? isSuperAdmin
+        ? "超級管理者"
+        : "非超管白名單"
+      : "學校申請者";
+  const statusLineLabel =
+    usage === "super" ? "超管白名單" : "Google 驗證信箱";
+  const statusLineValue =
+    usage === "super"
+      ? superAdminEmail
+      : authSession?.email ?? "尚未完成 Google 驗證";
+  const statusLineBadge = usage === "super" ? "已設定" : authSession ? "已驗證" : "待驗證";
+  const statusLineClass =
+    usage === "super" || authSession
+      ? "status-chip success"
+      : "status-chip status-待派工";
+  const googleButtonText =
+    usage === "school" ? "使用 Google 驗證帳號" : "使用 Google 登入";
 
   return (
     <section className="auth-section panel" aria-label={panelTitle}>
@@ -1661,7 +1701,7 @@ function FirebaseAuthPanel({
             <span>目前登入</span>
             <strong>{authSession.email}</strong>
             <small>
-              {isSuperAdmin ? "超級管理者" : "學校管理者"}｜UID {authSession.uid}
+              {accountRoleLabel}｜UID {authSession.uid}
             </small>
           </div>
           <button
@@ -1681,7 +1721,7 @@ function FirebaseAuthPanel({
             onClick={onGoogleLogin}
             type="button"
           >
-            {authLoading ? "前往 Google" : "使用 Google 登入"}
+            {authLoading ? "前往 Google" : googleButtonText}
           </button>
         </div>
       ) : (
@@ -1728,10 +1768,10 @@ function FirebaseAuthPanel({
       <div className="auth-status-list">
         <div className="status-line">
           <div>
-            <strong>超管白名單</strong>
-            <span>{superAdminEmail}</span>
+            <strong>{statusLineLabel}</strong>
+            <span>{statusLineValue}</span>
           </div>
-          <span className="status-chip success">已設定</span>
+          <span className={statusLineClass}>{statusLineBadge}</span>
         </div>
         {authMessage && <p className="auth-message">{authMessage}</p>}
       </div>
@@ -1742,17 +1782,23 @@ function FirebaseAuthPanel({
 function SchoolApplicationPanel({
   applicationForm,
   applications,
+  authSession,
   setApplicationForm,
   onSubmit,
 }: {
   applicationForm: SchoolApplicationForm;
   applications: SchoolApplication[];
+  authSession: AuthSession | null;
   setApplicationForm: (
     updater: (current: SchoolApplicationForm) => SchoolApplicationForm,
   ) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const recentApplications = applications.slice(0, 3);
+  const sheetReady = Boolean(getSafeSheetUrl(applicationForm.sheetUrl));
+  const canSubmit = Boolean(
+    authSession && sheetReady && applicationForm.schoolName.trim(),
+  );
 
   return (
     <section className="application-section panel" aria-label="學校端申請使用">
@@ -1761,8 +1807,17 @@ function SchoolApplicationPanel({
           <PanelHeader
             eyebrow="學校端"
             title="學校端申請使用"
-            action={<span className="status-chip status-待派工">待超管審核</span>}
+            action={
+              <span
+                className={canSubmit ? "status-chip success" : "status-chip"}
+              >
+                {canSubmit ? "可送出" : "待完成驗證"}
+              </span>
+            }
           />
+          <p className="management-note">
+            Google 帳號驗證與 Sheet 網址都完成後，才會送出申請。
+          </p>
           <form className="application-form" onSubmit={onSubmit}>
             <div className="application-form-grid">
               <label>
@@ -1779,32 +1834,10 @@ function SchoolApplicationPanel({
                 />
               </label>
               <label>
-                管理者信箱
+                Google 驗證信箱
                 <input
-                  required
-                  type="email"
-                  value={applicationForm.adminEmail}
-                  onChange={(event) =>
-                    setApplicationForm((current) => ({
-                      ...current,
-                      adminEmail: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label>
-                密碼
-                <input
-                  required
-                  minLength={8}
-                  type="password"
-                  value={applicationForm.password}
-                  onChange={(event) =>
-                    setApplicationForm((current) => ({
-                      ...current,
-                      password: event.target.value,
-                    }))
-                  }
+                  readOnly
+                  value={authSession?.email ?? "請先使用 Google 驗證帳號"}
                 />
               </label>
               <label>
@@ -1823,7 +1856,11 @@ function SchoolApplicationPanel({
                 />
               </label>
             </div>
-            <button className="primary-action" type="submit">
+            <button
+              className="primary-action"
+              disabled={!canSubmit}
+              type="submit"
+            >
               送出申請
             </button>
           </form>
@@ -1968,7 +2005,7 @@ function SuperAdminPage({
                   <div className="empty-state">
                     <strong>目前尚無學校申請</strong>
                     <p>
-                      學校管理者送出信箱、密碼與設備 Google Sheet
+                      學校管理者完成 Google 帳號驗證並送出設備 Google Sheet
                       後，申請才會出現在這裡。
                     </p>
                   </div>
@@ -2834,8 +2871,6 @@ function getSchoolStatusRows(
 function createEmptyApplicationForm(): SchoolApplicationForm {
   return {
     schoolName: "",
-    adminEmail: "",
-    password: "",
     sheetUrl: "",
   };
 }
@@ -2854,12 +2889,17 @@ function createAuthSession(user: User): AuthSession {
   };
 }
 
-function createGoogleProvider(superAdminEmail: string) {
+function createGoogleProvider(loginHint?: string) {
   const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({
-    login_hint: superAdminEmail,
+  const customParameters: Record<string, string> = {
     prompt: "select_account",
-  });
+  };
+
+  if (loginHint) {
+    customParameters.login_hint = loginHint;
+  }
+
+  provider.setCustomParameters(customParameters);
   return provider;
 }
 

@@ -61,13 +61,17 @@ test("server-renders the school admin page with QR management", async () => {
 
   const html = await response.text();
   assert.match(html, /各校系統管理者頁面/);
-  assert.match(html, /學校管理者登入/);
+  assert.match(html, /學校 Google 帳號驗證/);
   assert.match(html, /Firebase Auth/);
+  assert.match(html, /使用 Google 驗證帳號/);
   assert.match(html, /學校端申請使用/);
-  assert.match(html, /管理者信箱/);
-  assert.match(html, /密碼/);
+  assert.match(html, /Google 驗證信箱/);
+  assert.match(html, /請先使用 Google 驗證帳號/);
   assert.match(html, /學校設備 Google Sheet 網址/);
+  assert.match(html, /Google 帳號驗證與 Sheet 網址都完成後/);
   assert.match(html, /送出申請/);
+  assert.doesNotMatch(html, /登入信箱/);
+  assert.doesNotMatch(html, /密碼/);
   assert.match(html, /新增推車並自動產生 QR Code/);
   assert.match(html, /最新 QR Code/);
   assert.match(html, /網址載入中/);

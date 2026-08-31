@@ -38,8 +38,10 @@ Optional Firebase variables:
 
 Firebase console setup:
 
-- Enable Authentication sign-in with Email/Password.
-- Enable Authentication sign-in with Google for the super admin page.
+- Enable Authentication sign-in with Google for the super admin page and school
+  application verification.
+- Enable Authentication sign-in with Email/Password only if the password
+  fallback flow is intentionally reintroduced.
 - Add the deployed Worker domain to Authentication authorized domains.
 - A custom Google OAuth redirect URI is not required for the standard popup
   flow unless you intentionally replace Firebase's `authDomain`.
