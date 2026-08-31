@@ -68,6 +68,7 @@ test("server-renders the school admin page with QR management", async () => {
   assert.match(html, /編輯、刪除與調整推車狀態/);
   assert.match(html, /編輯推車/);
   assert.match(html, /刪除推車/);
+  assert.match(html, /下載 QR Code/);
   assert.match(html, /推車狀態/);
   assert.match(html, /案件看板/);
   assert.match(html, /推車健康度/);

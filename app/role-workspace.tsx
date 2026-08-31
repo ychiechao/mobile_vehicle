@@ -326,6 +326,7 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
   const [runtimeOrigin, setRuntimeOrigin] = useState("");
   const [storageReady, setStorageReady] = useState(false);
   const [copiedCartId, setCopiedCartId] = useState<string | null>(null);
+  const [downloadedCartId, setDownloadedCartId] = useState<string | null>(null);
   const [generatedCartId, setGeneratedCartId] = useState(initialCarts[0].id);
   const [scanMessage, setScanMessage] = useState("");
   const [cartForm, setCartForm] = useState<CartForm>({
@@ -595,6 +596,28 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     }
   }
 
+  async function downloadCartQr(cartItem: Cart) {
+    const url = createRepairUrl(cartItem, origin);
+    if (!url) {
+      return;
+    }
+
+    try {
+      const qrDataUrl = await createQrDataUrl(url);
+      const link = document.createElement("a");
+      link.href = qrDataUrl;
+      link.download = `${cartItem.id}-repair-qr.png`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setDownloadedCartId(cartItem.id);
+      window.setTimeout(() => setDownloadedCartId(null), 1800);
+      setScanMessage(`${cartItem.label} 的 QR Code PNG 已下載。`);
+    } catch {
+      setScanMessage("QR Code 下載失敗，請稍後再試一次。");
+    }
+  }
+
   return (
     <main className="app-shell">
       <RoleHeader activeRole={activeRole} />
@@ -630,6 +653,7 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
           cartEditForm={cartEditForm}
           copiedCartId={copiedCartId}
           deleteCandidateId={deleteCandidateId}
+          downloadedCartId={downloadedCartId}
           editingCartId={editingCartId}
           filter={filter}
           generatedCart={generatedCart}
@@ -647,6 +671,7 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
           onCopyCartUrl={copyCartUrl}
           onCreateCart={handleCreateCart}
           onDeleteCart={deleteCart}
+          onDownloadCartQr={downloadCartQr}
           onUpdateCart={handleUpdateCart}
           onUpdateCartStatus={updateCartStatus}
         />
@@ -876,6 +901,7 @@ function SchoolAdminPage({
   cartEditForm,
   copiedCartId,
   deleteCandidateId,
+  downloadedCartId,
   editingCartId,
   filter,
   generatedCart,
@@ -893,6 +919,7 @@ function SchoolAdminPage({
   onCopyCartUrl,
   onCreateCart,
   onDeleteCart,
+  onDownloadCartQr,
   onUpdateCart,
   onUpdateCartStatus,
 }: {
@@ -900,6 +927,7 @@ function SchoolAdminPage({
   cartEditForm: CartEditForm;
   copiedCartId: string | null;
   deleteCandidateId: string | null;
+  downloadedCartId: string | null;
   editingCartId: string | null;
   filter: (typeof filters)[number];
   generatedCart: Cart;
@@ -917,6 +945,7 @@ function SchoolAdminPage({
   onCopyCartUrl: (cart: Cart) => void;
   onCreateCart: (event: FormEvent<HTMLFormElement>) => void;
   onDeleteCart: (cartId: string) => void;
+  onDownloadCartQr: (cart: Cart) => void;
   onUpdateCart: (event: FormEvent<HTMLFormElement>) => void;
   onUpdateCartStatus: (cartId: string, status: CartStatus) => void;
 }) {
@@ -1052,6 +1081,17 @@ function SchoolAdminPage({
                   type="button"
                 >
                   {copiedCartId === item.id ? "已複製" : "複製網址"}
+                </button>
+                <button
+                  className="qr-download-action"
+                  disabled={!origin}
+                  onClick={() => {
+                    setGeneratedCartId(item.id);
+                    onDownloadCartQr(item);
+                  }}
+                  type="button"
+                >
+                  {downloadedCartId === item.id ? "已下載" : "下載 QR Code"}
                 </button>
                 <button
                   className={
@@ -1649,15 +1689,7 @@ function CartQrCard({
       };
     }
 
-    void toDataURL(url, {
-      errorCorrectionLevel: "M",
-      margin: 2,
-      scale: 7,
-      color: {
-        dark: "#18201d",
-        light: "#ffffff",
-      },
-    }).then((nextUrl) => {
+    void createQrDataUrl(url).then((nextUrl) => {
       if (isActive) {
         setQrDataUrl(nextUrl);
       }
@@ -2051,4 +2083,16 @@ function isCart(value: unknown): value is Cart {
 
 function isCartStatus(value: unknown): value is CartStatus {
   return cartStatuses.includes(value as CartStatus);
+}
+
+function createQrDataUrl(url: string) {
+  return toDataURL(url, {
+    errorCorrectionLevel: "M",
+    margin: 2,
+    scale: 7,
+    color: {
+      dark: "#18201d",
+      light: "#ffffff",
+    },
+  });
 }

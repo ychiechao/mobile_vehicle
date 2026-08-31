@@ -395,6 +395,7 @@ button:disabled {
 .filter-row button,
 .ghost-action,
 .danger-action,
+.qr-download-action,
 .ticket-side button,
 .primary-action {
   min-height: 40px;
@@ -416,6 +417,7 @@ button:disabled {
 .filter-row button:hover,
 .ghost-action:hover,
 .danger-action:hover,
+.qr-download-action:hover,
 .ticket-side button:hover {
   border-color: #839583;
   background: #f3f6f0;
@@ -754,6 +756,26 @@ button:disabled {
 }
 
 .danger-action:disabled {
+  border-color: #e3e7df;
+  background: #f0f2ee;
+  color: #8a948c;
+}
+
+.qr-download-action {
+  padding: 0 14px;
+  border-color: #86aa94;
+  background: var(--green-soft);
+  color: #1d513a;
+  white-space: nowrap;
+}
+
+.qr-download-action:hover {
+  border-color: var(--green);
+  background: #dcebdd;
+  color: #17462f;
+}
+
+.qr-download-action:disabled {
   border-color: #e3e7df;
   background: #f0f2ee;
   color: #8a948c;
