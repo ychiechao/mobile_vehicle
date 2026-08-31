@@ -18,6 +18,30 @@ npm run build
 
 This starter does not use `wrangler.jsonc`.
 
+## Firebase Auth Setup
+
+Firebase web config must be supplied outside Git. Do not commit real API keys,
+project IDs, auth domains, or database URLs in source files.
+
+Required build-time environment variables:
+
+- `NEXT_PUBLIC_FIREBASE_API_KEY`
+- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
+- `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+- `NEXT_PUBLIC_SUPER_ADMIN_EMAIL`
+
+Optional Firebase variables:
+
+- `NEXT_PUBLIC_FIREBASE_DATABASE_URL`
+- `NEXT_PUBLIC_FIREBASE_APP_ID`
+
+Firebase console setup:
+
+- Enable Authentication sign-in with Email/Password.
+- Add the deployed Worker domain to Authentication authorized domains.
+- Restrict the Firebase API key in Google Cloud API & Services Credentials to
+  the deployed HTTP referrers and the Firebase APIs used by this app.
+
 ## Included Shape
 
 - edit site code under `app/`
