@@ -298,6 +298,11 @@ button:disabled {
   margin: 18px auto 0;
 }
 
+.user-scan-grid {
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.85fr);
+  align-items: start;
+}
+
 .panel {
   padding: 22px;
 }
@@ -397,6 +402,177 @@ button:disabled {
 .inline-status-control select:focus {
   border-color: var(--green);
   box-shadow: 0 0 0 3px rgba(45, 106, 79, 0.14);
+}
+
+.cart-status-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.cart-status-hero > div:first-child {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  border: 1px solid #dfe6da;
+  border-radius: 8px;
+  background: #f8faf4;
+  padding: 16px;
+}
+
+.cart-status-hero span,
+.section-subhead span,
+.photo-upload-field span,
+.photo-preview small,
+.condition-line span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.cart-status-hero strong {
+  color: #17231d;
+  font-size: 1.16rem;
+  font-weight: 900;
+}
+
+.cart-status-hero p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.status-counter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.status-counter-grid article,
+.condition-line {
+  border: 1px solid #e2e6dc;
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 12px;
+}
+
+.status-counter-grid article {
+  display: grid;
+  gap: 4px;
+}
+
+.status-counter-grid strong,
+.condition-line strong {
+  color: #18251f;
+  font-size: 1.48rem;
+  font-weight: 900;
+}
+
+.status-counter-grid small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.cart-condition-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.condition-line {
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  min-height: 76px;
+}
+
+.active-abnormal-list {
+  margin-top: 18px;
+}
+
+.section-subhead {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.section-subhead strong {
+  color: #18251f;
+  font-size: 0.96rem;
+  font-weight: 900;
+}
+
+.abnormal-ticket-list {
+  display: grid;
+  gap: 10px;
+}
+
+.abnormal-ticket {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #e2e6dc;
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.abnormal-ticket span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.abnormal-ticket strong {
+  display: block;
+  margin-top: 4px;
+  color: #1b2922;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.user-record-form .choice-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.photo-upload-field input[type="file"] {
+  height: auto;
+  padding: 10px 12px;
+}
+
+.photo-preview {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  border: 1px solid #dfe6da;
+  border-radius: 8px;
+  background: #f8faf4;
+  padding: 10px;
+}
+
+.photo-preview-image {
+  width: 92px;
+  height: 72px;
+  border-radius: 6px;
+  background-position: center;
+  background-size: cover;
+}
+
+.photo-preview strong {
+  display: block;
+  color: #17231d;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .choice-grid {
@@ -1454,6 +1630,14 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .cart-status-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .cart-condition-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .brand-block h1 {
     font-size: 2.2rem;
   }
@@ -1489,8 +1673,18 @@ button:disabled {
   .application-form-grid,
   .admin-form-grid,
   .cart-edit-grid,
-  .choice-grid {
+  .choice-grid,
+  .status-counter-grid,
+  .cart-condition-grid,
+  .user-record-form .choice-grid,
+  .photo-preview {
     grid-template-columns: 1fr;
+  }
+
+  .photo-preview-image {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 4 / 3;
   }
 
   .metric-card {

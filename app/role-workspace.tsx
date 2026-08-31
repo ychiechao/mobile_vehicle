@@ -13,6 +13,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  type ChangeEvent,
   type FormEvent,
   type ReactNode,
 } from "react";
@@ -23,6 +24,7 @@ type Priority = "高" | "中" | "低";
 type TicketStatus = "待派工" | "維修中" | "待料" | "已完成";
 type SlotStatus = "ok" | "warning" | "offline";
 type CartStatus = "可借用" | "需檢查" | "停用";
+type UserRecordType = "開始使用檢查" | "未照號碼擺放" | "新增異常回報";
 
 type Ticket = {
   id: string;
@@ -89,6 +91,11 @@ type AuthForm = {
 type AuthSession = {
   uid: string;
   email: string;
+};
+
+type PhotoEvidence = {
+  name: string;
+  url: string;
 };
 
 type Metric = {
@@ -238,8 +245,11 @@ const initialCarts: Cart[] = [
 
 const initialSchoolApplications: SchoolApplication[] = [];
 
-const repairTypes = ["充電異常", "設備損壞", "網路異常", "借還問題"];
-const priorities: Priority[] = ["高", "中", "低"];
+const userRecordTypes: UserRecordType[] = [
+  "開始使用檢查",
+  "未照號碼擺放",
+  "新增異常回報",
+];
 const cartStatuses: CartStatus[] = ["可借用", "需檢查", "停用"];
 const filters: Array<"全部" | TicketStatus> = [
   "全部",
@@ -282,12 +292,12 @@ const roleCopy: Record<
   },
   user: {
     eyebrow: "使用者頁面",
-    title: "掃描推車 QR Code 後快速報修",
+    title: "掃描 QR 後查看推車狀態與上傳紀錄",
     description:
-      "老師或借用者可直接填寫故障描述、優先級與教室位置，系統會把案件送到學校管理端。",
+      "借用老師先確認推車數量、維修狀態與已回報異常；若狀態相同就不用重複回報，發現異常再拍照寫紀錄。",
     cardLabel: "報修入口",
-    cardTitle: "QR 掃描已支援自動帶入",
-    cardDetail: "網址參數會填入推車、教室與報修來源。",
+    cardTitle: "掃碼先看狀態",
+    cardDetail: "拍照與文字紀錄會自動帶入推車和回報時間。",
   },
   "school-admin": {
     eyebrow: "各校系統管理者頁面",
@@ -328,10 +338,13 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
   const [selectedCartId, setSelectedCartId] = useState(initialCarts[0].id);
   const [filter, setFilter] = useState<(typeof filters)[number]>("全部");
   const [room, setRoom] = useState(initialCarts[0].room);
-  const [repairType, setRepairType] = useState(repairTypes[0]);
-  const [priority, setPriority] = useState<Priority>("中");
   const [issue, setIssue] = useState(
-    "第 12 台平板放回推車後未顯示充電，已更換插槽仍無反應。",
+    "學生取用後發現第 12 號設備無法正常開機，已先拍照留存。",
+  );
+  const [userRecordType, setUserRecordType] =
+    useState<UserRecordType>("開始使用檢查");
+  const [photoEvidence, setPhotoEvidence] = useState<PhotoEvidence | null>(
+    null,
   );
   const [runtimeOrigin, setRuntimeOrigin] = useState("");
   const [storageReady, setStorageReady] = useState(false);
@@ -409,6 +422,14 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
   }, []);
 
   useEffect(() => {
+    return () => {
+      if (photoEvidence?.url) {
+        window.URL.revokeObjectURL(photoEvidence.url);
+      }
+    };
+  }, [photoEvidence]);
+
+  useEffect(() => {
     let isActive = true;
     let unsubscribe: (() => void) | undefined;
 
@@ -478,21 +499,48 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    const description = issue.trim();
+    if (!description && !photoEvidence) {
+      setScanMessage("請先拍照或撰寫紀錄內容。");
+      return;
+    }
+
+    const reportedAt = createCurrentReportTime();
+    const priority = getUserRecordPriority(userRecordType);
     const nextTicket: Ticket = {
-      id: `R-2026-0830-${String(tickets.length + 19).padStart(3, "0")}`,
+      id: createReportId(tickets.length + 19),
       cartId: selectedCart?.id ?? "unassigned",
       cart: `${selectedCart?.label ?? "未指定"} 平板推車`,
       room,
-      issue: `${repairType}｜${issue.trim() || "待補充故障描述"}`,
+      issue: createUserRecordIssue(
+        userRecordType,
+        description || "已拍照上傳紀錄，等待學校管理者確認。",
+        photoEvidence?.name,
+      ),
       priority,
       status: "待派工",
-      reportedAt: "剛剛",
-      owner: priority === "高" ? "資訊組" : "值班人員",
+      reportedAt,
+      owner: "借用老師",
     };
 
     setTickets((current) => [nextTicket, ...current]);
     setIssue("");
-    setScanMessage("報修單已建立，學校管理者會在案件看板看到這筆紀錄。");
+    setPhotoEvidence(null);
+    setScanMessage(
+      `${nextTicket.cart} 已於 ${reportedAt} 上傳${userRecordType}紀錄。`,
+    );
+  }
+
+  function handlePhotoChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setPhotoEvidence({
+      name: file.name,
+      url: window.URL.createObjectURL(file),
+    });
   }
 
   function handleCreateCart(event: FormEvent<HTMLFormElement>) {
@@ -885,16 +933,16 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
           issue={issue}
           managedCarts={managedCarts}
           metrics={userMetrics}
-          priority={priority}
-          repairType={repairType}
+          photoEvidence={photoEvidence}
           room={room}
           selectedCartId={selectedCartId}
           setIssue={setIssue}
-          setPriority={setPriority}
-          setRepairType={setRepairType}
+          setUserRecordType={setUserRecordType}
           setRoom={setRoom}
           setSelectedCartId={setSelectedCartId}
           tickets={tickets}
+          userRecordType={userRecordType}
+          onPhotoChange={handlePhotoChange}
           onSubmit={handleSubmit}
         />
       )}
@@ -1082,106 +1130,342 @@ function UserPage({
   issue,
   managedCarts,
   metrics,
-  priority,
-  repairType,
+  photoEvidence,
   room,
   selectedCartId,
   setIssue,
-  setPriority,
-  setRepairType,
   setRoom,
   setSelectedCartId,
+  setUserRecordType,
   tickets,
+  userRecordType,
+  onPhotoChange,
   onSubmit,
 }: {
   issue: string;
   managedCarts: Cart[];
   metrics: Metric[];
-  priority: Priority;
-  repairType: string;
+  photoEvidence: PhotoEvidence | null;
   room: string;
   selectedCartId: string;
   setIssue: (value: string) => void;
-  setPriority: (value: Priority) => void;
-  setRepairType: (value: string) => void;
   setRoom: (value: string) => void;
   setSelectedCartId: (value: string) => void;
+  setUserRecordType: (value: UserRecordType) => void;
   tickets: Ticket[];
+  userRecordType: UserRecordType;
+  onPhotoChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const selectedCart =
+    managedCarts.find((item) => item.id === selectedCartId) ?? managedCarts[0];
+  const selectedCartTickets = tickets.filter((ticket) =>
+    ticketBelongsToCart(ticket, selectedCart),
+  );
+
   return (
     <>
-      <MetricGrid metrics={metrics} label="使用者報修概況" />
+      <MetricGrid metrics={metrics} label="使用者紀錄概況" />
 
-      <section className="workspace-grid">
-        <RepairPanel
+      <section className="workspace-grid user-scan-grid">
+        <UserCartStatusPanel cart={selectedCart} tickets={tickets} />
+
+        <UserRecordPanel
+          cart={selectedCart}
           issue={issue}
           managedCarts={managedCarts}
-          priority={priority}
-          repairType={repairType}
+          photoEvidence={photoEvidence}
           room={room}
           selectedCartId={selectedCartId}
           setIssue={setIssue}
-          setPriority={setPriority}
-          setRepairType={setRepairType}
           setRoom={setRoom}
           setSelectedCartId={setSelectedCartId}
+          setUserRecordType={setUserRecordType}
+          userRecordType={userRecordType}
+          onPhotoChange={onPhotoChange}
           onSubmit={onSubmit}
         />
-
-        <section className="panel" aria-label="我的報修進度">
-          <PanelHeader
-            eyebrow="我的紀錄"
-            title="報修進度"
-            action={<span className="status-chip success">送出後即建立案件</span>}
-          />
-          <div className="user-ticket-list">
-            {tickets.slice(0, 4).map((ticket) => (
-              <article className="mini-ticket" key={ticket.id}>
-                <div className="ticket-meta">
-                  <span>{ticket.id}</span>
-                  <PriorityBadge priority={ticket.priority} />
-                  <StatusBadge status={ticket.status} />
-                </div>
-                <h3>{ticket.cart}</h3>
-                <p>{ticket.issue}</p>
-                <small>
-                  {ticket.room}｜{ticket.reportedAt}
-                </small>
-              </article>
-            ))}
-          </div>
-        </section>
       </section>
 
       <section className="operations-grid user-operations">
-        <section className="cart-section" aria-label="可借用推車">
-          <PanelHeader eyebrow="設備" title="可借用推車與健康度" />
-          <CartGrid carts={managedCarts} />
+        <section className="panel" aria-label="最近回報紀錄">
+          <PanelHeader
+            eyebrow="紀錄"
+            title="最近回報紀錄"
+            action={
+              <span className="status-chip success">管理端可追蹤</span>
+            }
+          />
+          <div className="user-ticket-list">
+            {selectedCartTickets.length === 0 ? (
+              <div className="empty-state">
+                <strong>目前沒有這台推車的回報紀錄</strong>
+                <p>拍照並送出後，紀錄會依回報時間出現在這裡。</p>
+              </div>
+            ) : (
+              selectedCartTickets.slice(0, 4).map((ticket) => (
+                <article className="mini-ticket" key={ticket.id}>
+                  <div className="ticket-meta">
+                    <span>{ticket.id}</span>
+                    <PriorityBadge priority={ticket.priority} />
+                    <StatusBadge status={ticket.status} />
+                  </div>
+                  <h3>{ticket.cart}</h3>
+                  <p>{ticket.issue}</p>
+                  <small>
+                    {ticket.room}｜{ticket.reportedAt}
+                  </small>
+                </article>
+              ))
+            )}
+          </div>
         </section>
 
-        <aside className="panel timeline-panel" aria-label="報修提醒">
-          <PanelHeader eyebrow="提醒" title="報修後會發生什麼" />
+        <aside className="panel timeline-panel" aria-label="借用紀錄流程">
+          <PanelHeader eyebrow="提醒" title="借用老師流程" />
           <ol className="timeline">
             <li>
               <span>第 1 步</span>
-              <strong>系統建立案件</strong>
-              <p>送出表單後，學校管理者頁面會出現待派工案件。</p>
+              <strong>掃 QR 先看推車狀態</strong>
+              <p>先確認數量、維修中、待修與目前已回報異常。</p>
             </li>
             <li>
               <span>第 2 步</span>
-              <strong>資訊組確認狀態</strong>
-              <p>高優先級會先檢查充電、離線與無法借用問題。</p>
+              <strong>重複異常不用回報</strong>
+              <p>若現場狀態與已回報異常相同，借用老師不用再送一次。</p>
             </li>
             <li>
               <span>第 3 步</span>
-              <strong>維修完成後結案</strong>
-              <p>案件狀態會更新，方便老師回來查看進度。</p>
+              <strong>有新狀況就拍照紀錄</strong>
+              <p>未照號碼擺放或學生取用後發現異常，都先拍照再補描述。</p>
+            </li>
+            <li>
+              <span>第 4 步</span>
+              <strong>管理者完成後重置</strong>
+              <p>維修或整理完成後，由學校管理者重置本推車狀態。</p>
             </li>
           </ol>
         </aside>
       </section>
     </>
+  );
+}
+
+function UserCartStatusPanel({
+  cart,
+  tickets,
+}: {
+  cart: Cart;
+  tickets: Ticket[];
+}) {
+  const slotSummary = getCartSlotSummary(cart);
+  const activeTickets = getActiveTicketsForCart(tickets, cart);
+  const repairingCount = activeTickets.filter(
+    (ticket) => ticket.status === "維修中",
+  ).length;
+  const pendingCount = activeTickets.filter(
+    (ticket) => ticket.status === "待派工" || ticket.status === "待料",
+  ).length;
+
+  return (
+    <section className="panel cart-status-panel" aria-label="掃描推車狀態">
+      <PanelHeader
+        eyebrow="掃描推車"
+        title={`${cart.label} 狀態總覽`}
+        action={<StatusPill status={cart.status} />}
+      />
+
+      <div className="cart-status-hero">
+        <div>
+          <span>{cart.id}</span>
+          <strong>{cart.room}</strong>
+          <p>掃描 QR Code 後先確認目前狀態；若異常已列在下方，不需重複回報。</p>
+        </div>
+        <div className="status-counter-grid">
+          <article>
+            <span>平板數量</span>
+            <strong>{slotSummary.total}</strong>
+            <small>{slotSummary.available} 台目前可用</small>
+          </article>
+          <article>
+            <span>維修中</span>
+            <strong>{repairingCount}</strong>
+            <small>管理端已處理中</small>
+          </article>
+          <article>
+            <span>待修/待確認</span>
+            <strong>{pendingCount}</strong>
+            <small>含待派工與待料</small>
+          </article>
+          <article>
+            <span>目前異常</span>
+            <strong>{activeTickets.length}</strong>
+            <small>已回報未結案</small>
+          </article>
+        </div>
+      </div>
+
+      <div className="cart-condition-grid">
+        <Meter label="推車健康度" value={cart.health} />
+        <Meter label="平均電量" value={cart.battery} />
+        <div className="condition-line">
+          <strong>{slotSummary.warning}</strong>
+          <span>台需檢查</span>
+        </div>
+        <div className="condition-line">
+          <strong>{slotSummary.offline}</strong>
+          <span>台離線或不可用</span>
+        </div>
+      </div>
+
+      <div className="active-abnormal-list">
+        <div className="section-subhead">
+          <strong>目前回報異常狀態</strong>
+          <span>若與現場看到的狀態相同，這次借用不用重複回報。</span>
+        </div>
+        {activeTickets.length === 0 ? (
+          <div className="empty-state">
+            <strong>目前沒有未結案異常</strong>
+            <p>學生取用前仍請快速檢查設備，發現新狀況再拍照上傳。</p>
+          </div>
+        ) : (
+          <div className="abnormal-ticket-list">
+            {activeTickets.map((ticket) => (
+              <article className="abnormal-ticket" key={ticket.id}>
+                <div>
+                  <span>{ticket.reportedAt}</span>
+                  <strong>{ticket.issue}</strong>
+                </div>
+                <StatusBadge status={ticket.status} />
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function UserRecordPanel({
+  cart,
+  issue,
+  managedCarts,
+  photoEvidence,
+  room,
+  selectedCartId,
+  setIssue,
+  setRoom,
+  setSelectedCartId,
+  setUserRecordType,
+  userRecordType,
+  onPhotoChange,
+  onSubmit,
+}: {
+  cart: Cart;
+  issue: string;
+  managedCarts: Cart[];
+  photoEvidence: PhotoEvidence | null;
+  room: string;
+  selectedCartId: string;
+  setIssue: (value: string) => void;
+  setRoom: (value: string) => void;
+  setSelectedCartId: (value: string) => void;
+  setUserRecordType: (value: UserRecordType) => void;
+  userRecordType: UserRecordType;
+  onPhotoChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <section className="panel repair-panel" aria-label="拍照撰寫紀錄">
+      <PanelHeader
+        eyebrow="借用老師紀錄"
+        title="拍照撰寫紀錄"
+        action={<span className="status-chip success">自動記錄時間</span>}
+      />
+
+      <form className="repair-form user-record-form" onSubmit={onSubmit}>
+        <label>
+          推車
+          <select
+            value={selectedCartId}
+            onChange={(event) => {
+              const nextCart = managedCarts.find(
+                (item) => item.id === event.target.value,
+              );
+              setSelectedCartId(event.target.value);
+              setRoom(nextCart?.room ?? room);
+            }}
+          >
+            {managedCarts.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          目前位置
+          <input value={room} onChange={(event) => setRoom(event.target.value)} />
+        </label>
+
+        <div className="field-group">
+          <span>紀錄類型</span>
+          <div className="choice-grid">
+            {userRecordTypes.map((type) => (
+              <button
+                aria-pressed={userRecordType === type}
+                className={userRecordType === type ? "choice active" : "choice"}
+                key={type}
+                onClick={() => setUserRecordType(type)}
+                type="button"
+              >
+                {type}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <label className="photo-upload-field">
+          拍照上傳照片
+          <input
+            accept="image/*"
+            capture="environment"
+            onChange={onPhotoChange}
+            type="file"
+          />
+          <span>拍攝未照號碼擺放、學生取用後的異常畫面或設備外觀。</span>
+        </label>
+
+        {photoEvidence && (
+          <div className="photo-preview">
+            <div
+              aria-label={`${cart.label} 上傳照片預覽`}
+              className="photo-preview-image"
+              role="img"
+              style={{ backgroundImage: `url(${photoEvidence.url})` }}
+            />
+            <div>
+              <strong>{photoEvidence.name}</strong>
+              <small>送出後會與這台推車的紀錄一起保存。</small>
+            </div>
+          </div>
+        )}
+
+        <label>
+          紀錄內容
+          <textarea
+            placeholder="例如：第 12 號設備無法開機，或第 3、4 號未照號碼放回。"
+            value={issue}
+            onChange={(event) => setIssue(event.target.value)}
+          />
+        </label>
+
+        <button className="primary-action" type="submit">
+          上傳紀錄
+        </button>
+      </form>
+    </section>
   );
 }
 
@@ -2313,117 +2597,6 @@ function getSuperAdminAccessNotice({
   return null;
 }
 
-function RepairPanel({
-  issue,
-  managedCarts,
-  priority,
-  repairType,
-  room,
-  selectedCartId,
-  setIssue,
-  setPriority,
-  setRepairType,
-  setRoom,
-  setSelectedCartId,
-  onSubmit,
-}: {
-  issue: string;
-  managedCarts: Cart[];
-  priority: Priority;
-  repairType: string;
-  room: string;
-  selectedCartId: string;
-  setIssue: (value: string) => void;
-  setPriority: (value: Priority) => void;
-  setRepairType: (value: string) => void;
-  setRoom: (value: string) => void;
-  setSelectedCartId: (value: string) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-}) {
-  return (
-    <section className="panel repair-panel" aria-label="新增報修單">
-      <PanelHeader
-        eyebrow="報修登錄"
-        title="新增報修單"
-        action={<span className="status-chip success">掃碼可帶入</span>}
-      />
-
-      <form className="repair-form" onSubmit={onSubmit}>
-        <label>
-          推車位置
-          <select
-            value={selectedCartId}
-            onChange={(event) => {
-              const nextCart = managedCarts.find(
-                (item) => item.id === event.target.value,
-              );
-              setSelectedCartId(event.target.value);
-              setRoom(nextCart?.room ?? room);
-            }}
-          >
-            {managedCarts.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          教室或保管位置
-          <input value={room} onChange={(event) => setRoom(event.target.value)} />
-        </label>
-
-        <div className="field-group">
-          <span>問題類型</span>
-          <div className="choice-grid">
-            {repairTypes.map((type) => (
-              <button
-                aria-pressed={repairType === type}
-                className={repairType === type ? "choice active" : "choice"}
-                key={type}
-                onClick={() => setRepairType(type)}
-                type="button"
-              >
-                {type}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="field-group">
-          <span>優先級</span>
-          <div className="segment-control">
-            {priorities.map((item) => (
-              <button
-                aria-pressed={priority === item}
-                className={priority === item ? "active" : ""}
-                key={item}
-                onClick={() => setPriority(item)}
-                type="button"
-              >
-                {item}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <label>
-          故障描述
-          <textarea
-            value={issue}
-            onChange={(event) => setIssue(event.target.value)}
-          />
-        </label>
-
-        <button className="primary-action" type="submit">
-          建立報修單
-        </button>
-      </form>
-    </section>
-  );
-}
-
 function MaintenanceTimeline({ tickets }: { tickets: Ticket[] }) {
   const activeTickets = tickets
     .filter((ticket) => ticket.status !== "已完成")
@@ -2736,6 +2909,61 @@ function getTimelineDetail(ticket: Ticket) {
   return `${ticket.cart}｜${ticket.room}｜${ticket.issue}`;
 }
 
+function getCartSlotSummary(cart: Cart) {
+  const warning = cart.slots.filter((slot) => slot === "warning").length;
+  const offline = cart.slots.filter((slot) => slot === "offline").length;
+  const total = cart.slots.length;
+
+  return {
+    available: Math.max(total - warning - offline, 0),
+    offline,
+    total,
+    warning,
+  };
+}
+
+function getActiveTicketsForCart(tickets: Ticket[], cart: Cart) {
+  return tickets.filter(
+    (ticket) =>
+      ticket.status !== "已完成" && ticketBelongsToCart(ticket, cart),
+  );
+}
+
+function createReportId(nextIndex: number) {
+  const now = new Date();
+  const year = String(now.getFullYear());
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+
+  return `R-${year}-${month}${day}-${String(nextIndex).padStart(3, "0")}`;
+}
+
+function createCurrentReportTime() {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  const hour = String(now.getHours()).padStart(2, "0");
+  const minute = String(now.getMinutes()).padStart(2, "0");
+
+  return `${month}/${day} ${hour}:${minute}`;
+}
+
+function createUserRecordIssue(
+  recordType: UserRecordType,
+  description: string,
+  photoName?: string,
+) {
+  return [
+    recordType,
+    description,
+    photoName ? `照片：${photoName}` : "未附照片",
+  ].join("｜");
+}
+
+function getUserRecordPriority(recordType: UserRecordType): Priority {
+  return recordType === "未照號碼擺放" ? "低" : "中";
+}
+
 function getSchoolMetrics(tickets: Ticket[], carts: Cart[]): Metric[] {
   const active = tickets.filter((ticket) => ticket.status !== "已完成");
   return [
@@ -2767,30 +2995,31 @@ function getSchoolMetrics(tickets: Ticket[], carts: Cart[]): Metric[] {
 }
 
 function getUserMetrics(tickets: Ticket[], carts: Cart[]): Metric[] {
+  const active = tickets.filter((ticket) => ticket.status !== "已完成");
   return [
     {
-      label: "我的待處理",
-      value: tickets
-        .filter((ticket) => ticket.status !== "已完成")
-        .length.toString(),
-      detail: "送出後由資訊組派工",
+      label: "目前異常",
+      value: active.length.toString(),
+      detail: "掃 QR 先確認是否已回報",
     },
     {
       label: "可借用推車",
       value: carts.filter((item) => item.status === "可借用").length.toString(),
-      detail: "掃 QR 可自動帶入",
+      detail: `全校 ${carts.length} 台`,
     },
     {
-      label: "已完成",
+      label: "維修完成",
       value: tickets
         .filter((ticket) => ticket.status === "已完成")
         .length.toString(),
-      detail: "近兩日示範紀錄",
+      detail: "管理者完成後可重置",
     },
     {
-      label: "平均回覆",
-      value: "1.8h",
-      detail: "高優先案件會先通知",
+      label: "照片紀錄",
+      value: tickets
+        .filter((ticket) => ticket.issue.includes("照片："))
+        .length.toString(),
+      detail: "拍照後自動帶入時間",
     },
   ];
 }

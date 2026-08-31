@@ -48,10 +48,19 @@ test("server-renders the user page", async () => {
 
   const html = await response.text();
   assert.match(html, /使用者頁面/);
-  assert.match(html, /掃描推車 QR Code 後快速報修/);
-  assert.match(html, /新增報修單/);
-  assert.match(html, /報修進度/);
-  assert.match(html, /可借用推車與健康度/);
+  assert.match(html, /掃描 QR 後查看推車狀態與上傳紀錄/);
+  assert.match(html, /使用者紀錄概況/);
+  assert.match(html, /狀態總覽/);
+  assert.match(html, /目前回報異常狀態/);
+  assert.match(html, /若與現場看到的狀態相同/);
+  assert.match(html, /拍照撰寫紀錄/);
+  assert.match(html, /未照號碼擺放/);
+  assert.match(html, /拍照上傳照片/);
+  assert.match(html, /上傳紀錄/);
+  assert.match(html, /借用老師流程/);
+  assert.match(html, /管理者完成後重置/);
+  assert.doesNotMatch(html, /新增報修單/);
+  assert.doesNotMatch(html, /優先級/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/i);
 });
 
