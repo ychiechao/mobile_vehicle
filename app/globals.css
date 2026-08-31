@@ -260,6 +260,8 @@ button:disabled {
 .role-card span,
 .qr-card span,
 .managed-cart-row span,
+.application-status-card span,
+.application-review-row span,
 .school-table span,
 .mini-ticket small {
   color: var(--green);
@@ -317,6 +319,7 @@ button:disabled {
 
 .repair-form,
 .admin-form,
+.application-form,
 .cart-edit-form {
   display: grid;
   gap: 16px;
@@ -325,6 +328,7 @@ button:disabled {
 
 .repair-form label,
 .admin-form label,
+.application-form label,
 .cart-edit-form label,
 .inline-status-control,
 .field-group {
@@ -340,6 +344,8 @@ button:disabled {
 .repair-form textarea,
 .admin-form input,
 .admin-form select,
+.application-form input,
+.application-form select,
 .cart-edit-form input,
 .cart-edit-form select,
 .inline-status-control select {
@@ -358,6 +364,8 @@ button:disabled {
 .repair-form select,
 .admin-form input,
 .admin-form select,
+.application-form input,
+.application-form select,
 .cart-edit-form input,
 .cart-edit-form select,
 .inline-status-control select {
@@ -377,6 +385,8 @@ button:disabled {
 .repair-form textarea:focus,
 .admin-form input:focus,
 .admin-form select:focus,
+.application-form input:focus,
+.application-form select:focus,
 .cart-edit-form input:focus,
 .cart-edit-form select:focus,
 .inline-status-control select:focus {
@@ -606,6 +616,21 @@ button:disabled {
   color: #1d513a;
 }
 
+.status-待審核 {
+  background: var(--gold-soft);
+  color: #755818;
+}
+
+.status-已啟用 {
+  background: var(--green-soft);
+  color: #1d513a;
+}
+
+.status-退回補件 {
+  background: var(--red-soft);
+  color: #9a3412;
+}
+
 .status-正常 {
   background: var(--green-soft);
   color: #1d513a;
@@ -624,6 +649,124 @@ button:disabled {
 .admin-section {
   max-width: 1240px;
   margin: 18px auto 0;
+}
+
+.application-section {
+  max-width: 1240px;
+  margin: 18px auto 0;
+}
+
+.application-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  gap: 20px;
+  align-items: stretch;
+}
+
+.application-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.application-status-card {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  border: 1px solid #dfe6da;
+  border-radius: 8px;
+  background: #f8faf4;
+  padding: 16px;
+}
+
+.application-status-card h3 {
+  margin: 0;
+  color: #18251f;
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.application-list,
+.application-review-list {
+  display: grid;
+  gap: 10px;
+}
+
+.application-mini-row,
+.application-review-row {
+  border: 1px solid #e2e6dc;
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 12px;
+}
+
+.application-mini-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.application-mini-row strong,
+.application-review-row h3 {
+  display: block;
+  margin: 0;
+  color: #1b2922;
+  font-size: 0.96rem;
+  font-weight: 800;
+}
+
+.application-mini-row small,
+.application-review-row small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.application-review-list {
+  margin-top: 16px;
+}
+
+.application-review-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.9fr) minmax(0, 1.1fr) auto;
+  gap: 14px;
+  align-items: start;
+}
+
+.application-review-row p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.application-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.application-actions .primary-action,
+.application-actions .ghost-action {
+  width: auto;
+  padding: 0 14px;
+}
+
+.sheet-link {
+  display: inline-flex;
+  margin-top: 8px;
+  color: #24563f;
+  font-size: 0.84rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.sheet-link:hover {
+  color: #173d2d;
+  text-decoration: underline;
 }
 
 .admin-layout {
@@ -1172,6 +1315,29 @@ button:disabled {
   line-height: 1.55;
 }
 
+.empty-state {
+  display: grid;
+  gap: 6px;
+  margin-top: 16px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  background: #f8faf4;
+  padding: 16px;
+}
+
+.empty-state strong {
+  color: #1b2922;
+  font-size: 0.96rem;
+  font-weight: 800;
+}
+
+.empty-state p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
 @media (max-width: 980px) {
   .app-shell {
     padding: 18px;
@@ -1179,6 +1345,7 @@ button:disabled {
 
   .topbar,
   .workspace-grid,
+  .application-layout,
   .admin-layout,
   .operations-grid,
   .super-layout {
@@ -1190,6 +1357,7 @@ button:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .application-review-row,
   .managed-cart-row,
   .cart-edit-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1231,6 +1399,7 @@ button:disabled {
 
   .metric-grid,
   .role-card-grid,
+  .application-form-grid,
   .admin-form-grid,
   .cart-edit-grid,
   .choice-grid {
@@ -1264,11 +1433,19 @@ button:disabled {
   }
 
   .qr-actions,
+  .application-mini-row,
+  .application-review-row,
   .managed-cart-row,
   .status-line {
     grid-template-columns: 1fr;
   }
 
+  .application-mini-row {
+    display: grid;
+    align-items: start;
+  }
+
+  .application-actions,
   .managed-cart-actions,
   .cart-edit-actions {
     display: grid;
@@ -1282,6 +1459,8 @@ button:disabled {
 
   .managed-cart-row .ghost-action,
   .managed-cart-row .danger-action,
+  .application-actions .primary-action,
+  .application-actions .ghost-action,
   .cart-edit-actions .primary-action {
     width: 100%;
   }

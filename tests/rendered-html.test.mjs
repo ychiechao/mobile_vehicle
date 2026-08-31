@@ -61,6 +61,11 @@ test("server-renders the school admin page with QR management", async () => {
 
   const html = await response.text();
   assert.match(html, /各校系統管理者頁面/);
+  assert.match(html, /學校端申請使用/);
+  assert.match(html, /管理者信箱/);
+  assert.match(html, /密碼/);
+  assert.match(html, /學校設備 Google Sheet 網址/);
+  assert.match(html, /送出申請/);
   assert.match(html, /新增推車並自動產生 QR Code/);
   assert.match(html, /最新 QR Code/);
   assert.match(html, /網址載入中/);
@@ -73,6 +78,8 @@ test("server-renders the school admin page with QR management", async () => {
   assert.match(html, /關聯案件/);
   assert.match(html, /刪除推車會同步移除案件看板中的關聯案件/);
   assert.match(html, /案件看板/);
+  assert.match(html, /等待派工確認/);
+  assert.match(html, /等待零件或廠商/);
   assert.match(html, /推車健康度/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/i);
 });
@@ -83,7 +90,12 @@ test("server-renders the super admin page", async () => {
 
   const html = await response.text();
   assert.match(html, /超管頁面/);
-  assert.match(html, /跨校系統監控與權限治理/);
+  assert.match(html, /Google Sheet 主資料庫與帳號啟用/);
+  assert.match(html, /學校申請審核/);
+  assert.match(html, /啟用帳號/);
+  assert.match(html, /退回補件/);
+  assert.match(html, /開啟設備表/);
+  assert.match(html, /開啟主資料庫/);
   assert.match(html, /各校系統狀態/);
   assert.match(html, /權限與啟用狀態/);
   assert.match(html, /跨校案件看板/);

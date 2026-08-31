@@ -55,6 +55,25 @@ type CartEditForm = {
   tabletCount: string;
 };
 
+type ApplicationStatus = "待審核" | "已啟用" | "退回補件";
+
+type SchoolApplication = {
+  id: string;
+  schoolName: string;
+  adminEmail: string;
+  sheetUrl: string;
+  submittedAt: string;
+  status: ApplicationStatus;
+  note: string;
+};
+
+type SchoolApplicationForm = {
+  schoolName: string;
+  adminEmail: string;
+  password: string;
+  sheetUrl: string;
+};
+
 type Metric = {
   label: string;
   value: string;
@@ -75,6 +94,10 @@ type SchoolStatus = {
 };
 
 const STORAGE_KEY = "tablet-cart-repair-system:carts";
+const APPLICATION_STORAGE_KEY = "tablet-cart-repair-system:school-applications";
+const MAIN_DATABASE_SHEET_URL =
+  "https://docs.google.com/spreadsheets/d/1baE1-6fXpTfNQT59VdHJ2FuecaSy5OmbR392ODrdaTA/edit?usp=sharing";
+const MAIN_DATABASE_SHEET_NAME = "工作表1";
 
 const initialTickets: Ticket[] = [
   {
@@ -246,6 +269,27 @@ const schoolStatuses: SchoolStatus[] = [
   },
 ];
 
+const initialSchoolApplications: SchoolApplication[] = [
+  {
+    id: "APP-ILC-001",
+    schoolName: "宜蘭示範學校",
+    adminEmail: "school-admin@example.edu.tw",
+    sheetUrl: MAIN_DATABASE_SHEET_URL,
+    submittedAt: "剛剛",
+    status: "待審核",
+    note: "等待超管啟用帳號",
+  },
+  {
+    id: "APP-ILC-002",
+    schoolName: "羅東國小",
+    adminEmail: "ict-admin@example.edu.tw",
+    sheetUrl: MAIN_DATABASE_SHEET_URL,
+    submittedAt: "昨日 15:30",
+    status: "已啟用",
+    note: "帳號已啟用，設備表已登錄",
+  },
+];
+
 const repairTypes = ["充電異常", "設備損壞", "網路異常", "借還問題"];
 const priorities: Priority[] = ["高", "中", "低"];
 const cartStatuses: CartStatus[] = ["可借用", "需檢查", "停用"];
@@ -283,7 +327,7 @@ const roleCopy: Record<
     eyebrow: "角色入口",
     title: "平板推車報修系統",
     description:
-      "第一版已分成一般使用者、各校系統管理者、超級管理者三個頁面，從掃 QR 報修到跨校管理都能直接進入。",
+      "第一版已分成一般使用者、各校系統管理者、超級管理者三個頁面，並以 Google Sheet 作為主要資料庫方向。",
     cardLabel: "目前版本",
     cardTitle: "三種角色頁面已啟用",
     cardDetail: "QR Code 會導向使用者頁面並自動帶入推車資訊。",
@@ -299,27 +343,32 @@ const roleCopy: Record<
   },
   "school-admin": {
     eyebrow: "各校系統管理者頁面",
-    title: "學校推車、QR Code 與案件看板",
+    title: "學校申請、推車與 QR Code 管理",
     description:
-      "資訊組可以新增推車、列印 QR Code、查看全校案件與推車健康度，並更新維修進度。",
-    cardLabel: "今日值班",
-    cardTitle: "資訊組 08:00-17:00",
-    cardDetail: "緊急案件先處理充電、離線與無法借用狀況。",
+      "學校端先以信箱、密碼與學校設備 Google Sheet 送出申請，超管啟用後再進入推車與案件管理。",
+    cardLabel: "帳號流程",
+    cardTitle: "等待超管啟用",
+    cardDetail: "啟用後即可新增推車、產生 QR Code 並管理維修案件。",
   },
   "super-admin": {
     eyebrow: "超管頁面",
-    title: "跨校系統監控與權限治理",
+    title: "Google Sheet 主資料庫與帳號啟用",
     description:
-      "超級管理者可查看各校啟用狀態、案件壓力、管理者設定與需要協助的學校。",
-    cardLabel: "平台狀態",
-    cardTitle: "4 所示範學校在線",
-    cardDetail: "可從這裡追蹤各校系統狀態與權限缺口。",
+      "超級管理者可審核學校端申請、啟用管理者帳號，並追蹤各校設備表與跨校維修案件。",
+    cardLabel: "超管帳號",
+    cardTitle: "主資料庫已指定",
+    cardDetail: "學校申請會先進入待審核清單，由超管啟用。",
   },
 };
 
 export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
   const [tickets, setTickets] = useState(initialTickets);
   const [managedCarts, setManagedCarts] = useState(initialCarts);
+  const [schoolApplications, setSchoolApplications] = useState(
+    initialSchoolApplications,
+  );
+  const [applicationForm, setApplicationForm] =
+    useState<SchoolApplicationForm>(createEmptyApplicationForm());
   const [selectedCartId, setSelectedCartId] = useState(initialCarts[0].id);
   const [filter, setFilter] = useState<(typeof filters)[number]>("全部");
   const [room, setRoom] = useState(initialCarts[0].room);
@@ -357,7 +406,12 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       const storedCarts = readStoredCarts();
+      const storedApplications = readStoredSchoolApplications();
       let nextCarts = storedCarts.length > 0 ? storedCarts : initialCarts;
+      const nextApplications =
+        storedApplications.length > 0
+          ? storedApplications
+          : initialSchoolApplications;
 
       const params = new URLSearchParams(window.location.search);
       const cartId = params.get("cartId");
@@ -391,6 +445,7 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
       }
 
       setManagedCarts(nextCarts);
+      setSchoolApplications(nextApplications);
       setRuntimeOrigin(window.location.origin);
       setStorageReady(true);
     });
@@ -404,7 +459,11 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     }
 
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(managedCarts));
-  }, [managedCarts, storageReady]);
+    window.localStorage.setItem(
+      APPLICATION_STORAGE_KEY,
+      JSON.stringify(schoolApplications),
+    );
+  }, [managedCarts, schoolApplications, storageReady]);
 
   const schoolMetrics = useMemo(
     () => getSchoolMetrics(tickets, managedCarts),
@@ -414,7 +473,10 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     () => getUserMetrics(tickets, managedCarts),
     [managedCarts, tickets],
   );
-  const superMetrics = useMemo(() => getSuperMetrics(), []);
+  const superMetrics = useMemo(
+    () => getSuperMetrics(schoolApplications),
+    [schoolApplications],
+  );
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -466,6 +528,68 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
       room: "",
       tabletCount: cartForm.tabletCount,
     });
+  }
+
+  function handleSubmitSchoolApplication(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const safeSheetUrl = getSafeSheetUrl(applicationForm.sheetUrl);
+    if (!safeSheetUrl) {
+      setScanMessage("請提供 Google Sheets 的 https 網址。");
+      return;
+    }
+
+    const schoolName = applicationForm.schoolName.trim();
+    const adminEmail = applicationForm.adminEmail.trim();
+    const nextApplication: SchoolApplication = {
+      id: createApplicationId(schoolApplications.length + 1),
+      schoolName,
+      adminEmail,
+      sheetUrl: safeSheetUrl,
+      submittedAt: "剛剛",
+      status: "待審核",
+      note: "等待超管啟用帳號",
+    };
+
+    setSchoolApplications((current) => [
+      nextApplication,
+      ...current.filter(
+        (item) =>
+          item.adminEmail.toLowerCase() !== adminEmail.toLowerCase() ||
+          item.schoolName !== schoolName,
+      ),
+    ]);
+    setApplicationForm(createEmptyApplicationForm());
+    setScanMessage(`${schoolName} 已送出申請，等待超管啟用帳號。`);
+  }
+
+  function updateSchoolApplicationStatus(
+    applicationId: string,
+    status: ApplicationStatus,
+  ) {
+    const application = schoolApplications.find(
+      (item) => item.id === applicationId,
+    );
+    if (!application) {
+      return;
+    }
+
+    setSchoolApplications((current) =>
+      current.map((item) =>
+        item.id === applicationId
+          ? {
+              ...item,
+              status,
+              note: getApplicationStatusNote(status),
+            }
+          : item,
+      ),
+    );
+    setScanMessage(
+      `${application.schoolName} 已${
+        status === "已啟用" ? "啟用帳號" : "退回補件"
+      }。`,
+    );
   }
 
   function beginEditCart(cart: Cart) {
@@ -675,6 +799,7 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
 
       {activeRole === "school-admin" && (
         <SchoolAdminPage
+          applicationForm={applicationForm}
           cartForm={cartForm}
           cartEditForm={cartEditForm}
           copiedCartId={copiedCartId}
@@ -690,6 +815,8 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
           setCartEditForm={setCartEditForm}
           setFilter={setFilter}
           setGeneratedCartId={setGeneratedCartId}
+          setApplicationForm={setApplicationForm}
+          schoolApplications={schoolApplications}
           tickets={tickets}
           onAdvanceTicket={advanceTicket}
           onBeginEditCart={beginEditCart}
@@ -698,6 +825,7 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
           onCreateCart={handleCreateCart}
           onDeleteCart={deleteCart}
           onDownloadCartQr={downloadCartQr}
+          onSubmitSchoolApplication={handleSubmitSchoolApplication}
           onUpdateCart={handleUpdateCart}
           onUpdateCartStatus={updateCartStatus}
         />
@@ -707,9 +835,11 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
         <SuperAdminPage
           filter={filter}
           metrics={superMetrics}
+          schoolApplications={schoolApplications}
           setFilter={setFilter}
           tickets={tickets}
           onAdvanceTicket={advanceTicket}
+          onUpdateApplicationStatus={updateSchoolApplicationStatus}
         />
       )}
     </main>
@@ -760,14 +890,14 @@ function HubPage({ metrics, carts }: { metrics: Metric[]; carts: Cart[] }) {
         <RoleEntry
           href="/school-admin"
           label="各校系統管理者頁面"
-          title="新增推車與案件管理"
-          description="學校資訊組可新增推車、產生網址與 QR Code，並在同一頁處理維修進度。"
+          title="申請啟用與推車管理"
+          description="學校資訊組先送出信箱、密碼與設備 Google Sheet，超管啟用後再管理推車與案件。"
         />
         <RoleEntry
           href="/super-admin"
           label="超管頁面"
-          title="跨校總覽與權限"
-          description="超級管理者可掌握各校啟用狀態、案件量、管理者名額與需要支援的學校。"
+          title="主資料庫與帳號啟用"
+          description="超級管理者掌握主 Google Sheet、審核學校申請，並追蹤跨校案件與權限狀態。"
         />
       </section>
 
@@ -778,8 +908,16 @@ function HubPage({ metrics, carts }: { metrics: Metric[]; carts: Cart[] }) {
           <PanelHeader eyebrow="流程" title="第一版本完整動線" />
           <ol className="flow-list">
             <li>
+              <strong>學校端送出使用申請</strong>
+              <p>學校管理者提供信箱、密碼與學校設備 Google Sheet 網址。</p>
+            </li>
+            <li>
+              <strong>超管啟用學校帳號</strong>
+              <p>申請進入待審核清單後，由超管確認資料並啟用帳號。</p>
+            </li>
+            <li>
               <strong>學校管理者新增推車</strong>
-              <p>輸入推車編號、位置、平板數量後，系統自動產生報修網址與 QR Code。</p>
+              <p>輸入推車編號、位置、平板數量後，自動產生報修網址與 QR Code。</p>
             </li>
             <li>
               <strong>使用者掃碼報修</strong>
@@ -923,6 +1061,7 @@ function UserPage({
 }
 
 function SchoolAdminPage({
+  applicationForm,
   cartForm,
   cartEditForm,
   copiedCartId,
@@ -938,6 +1077,8 @@ function SchoolAdminPage({
   setCartEditForm,
   setFilter,
   setGeneratedCartId,
+  setApplicationForm,
+  schoolApplications,
   tickets,
   onAdvanceTicket,
   onBeginEditCart,
@@ -946,9 +1087,11 @@ function SchoolAdminPage({
   onCreateCart,
   onDeleteCart,
   onDownloadCartQr,
+  onSubmitSchoolApplication,
   onUpdateCart,
   onUpdateCartStatus,
 }: {
+  applicationForm: SchoolApplicationForm;
   cartForm: CartForm;
   cartEditForm: CartEditForm;
   copiedCartId: string | null;
@@ -964,6 +1107,10 @@ function SchoolAdminPage({
   setCartEditForm: (updater: (current: CartEditForm) => CartEditForm) => void;
   setFilter: (value: (typeof filters)[number]) => void;
   setGeneratedCartId: (value: string) => void;
+  setApplicationForm: (
+    updater: (current: SchoolApplicationForm) => SchoolApplicationForm,
+  ) => void;
+  schoolApplications: SchoolApplication[];
   tickets: Ticket[];
   onAdvanceTicket: (id: string) => void;
   onBeginEditCart: (cart: Cart) => void;
@@ -972,12 +1119,20 @@ function SchoolAdminPage({
   onCreateCart: (event: FormEvent<HTMLFormElement>) => void;
   onDeleteCart: (cartId: string) => void;
   onDownloadCartQr: (cart: Cart) => void;
+  onSubmitSchoolApplication: (event: FormEvent<HTMLFormElement>) => void;
   onUpdateCart: (event: FormEvent<HTMLFormElement>) => void;
   onUpdateCartStatus: (cartId: string, status: CartStatus) => void;
 }) {
   return (
     <>
       <MetricGrid metrics={metrics} label="學校管理概況" />
+
+      <SchoolApplicationPanel
+        applicationForm={applicationForm}
+        applications={schoolApplications}
+        setApplicationForm={setApplicationForm}
+        onSubmit={onSubmitSchoolApplication}
+      />
 
       <section className="admin-section panel" aria-label="推車 QR Code 管理">
         <div className="admin-layout">
@@ -1269,23 +1424,7 @@ function SchoolAdminPage({
 
         <aside className="panel timeline-panel" aria-label="今日維修進度">
           <PanelHeader eyebrow="今日排程" title="維修進度" />
-          <ol className="timeline">
-            <li>
-              <span>09:50</span>
-              <strong>A3-01 充電座檢查</strong>
-              <p>優先確認第 12 台插槽與電源模組。</p>
-            </li>
-            <li>
-              <span>11:20</span>
-              <strong>B2-02 門鎖零件更換</strong>
-              <p>總務處協助備料，午休前完成。</p>
-            </li>
-            <li>
-              <span>14:00</span>
-              <strong>行政樓 Wi-Fi 測試</strong>
-              <p>廠商遠端查看 AP 與平板連線紀錄。</p>
-            </li>
-          </ol>
+          <MaintenanceTimeline tickets={tickets} />
         </aside>
       </section>
 
@@ -1326,22 +1465,248 @@ function SchoolAdminPage({
   );
 }
 
+function SchoolApplicationPanel({
+  applicationForm,
+  applications,
+  setApplicationForm,
+  onSubmit,
+}: {
+  applicationForm: SchoolApplicationForm;
+  applications: SchoolApplication[];
+  setApplicationForm: (
+    updater: (current: SchoolApplicationForm) => SchoolApplicationForm,
+  ) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const recentApplications = applications.slice(0, 3);
+
+  return (
+    <section className="application-section panel" aria-label="學校端申請使用">
+      <div className="application-layout">
+        <div>
+          <PanelHeader
+            eyebrow="學校端"
+            title="學校端申請使用"
+            action={<span className="status-chip status-待派工">待超管審核</span>}
+          />
+          <form className="application-form" onSubmit={onSubmit}>
+            <div className="application-form-grid">
+              <label>
+                學校名稱
+                <input
+                  required
+                  value={applicationForm.schoolName}
+                  onChange={(event) =>
+                    setApplicationForm((current) => ({
+                      ...current,
+                      schoolName: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                管理者信箱
+                <input
+                  required
+                  type="email"
+                  value={applicationForm.adminEmail}
+                  onChange={(event) =>
+                    setApplicationForm((current) => ({
+                      ...current,
+                      adminEmail: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                密碼
+                <input
+                  required
+                  minLength={8}
+                  type="password"
+                  value={applicationForm.password}
+                  onChange={(event) =>
+                    setApplicationForm((current) => ({
+                      ...current,
+                      password: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                學校設備 Google Sheet 網址
+                <input
+                  required
+                  placeholder="https://docs.google.com/spreadsheets/d/..."
+                  type="url"
+                  value={applicationForm.sheetUrl}
+                  onChange={(event) =>
+                    setApplicationForm((current) => ({
+                      ...current,
+                      sheetUrl: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            </div>
+            <button className="primary-action" type="submit">
+              送出申請
+            </button>
+          </form>
+        </div>
+
+        <aside className="application-status-card" aria-label="申請狀態">
+          <span>申請狀態</span>
+          <h3>等待超管啟用</h3>
+          <div className="application-list">
+            {recentApplications.map((application) => (
+              <article className="application-mini-row" key={application.id}>
+                <div>
+                  <strong>{application.schoolName}</strong>
+                  <small>{application.adminEmail}</small>
+                </div>
+                <ApplicationStatusBadge status={application.status} />
+              </article>
+            ))}
+          </div>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
 function SuperAdminPage({
   filter,
   metrics,
+  schoolApplications,
   setFilter,
   tickets,
   onAdvanceTicket,
+  onUpdateApplicationStatus,
 }: {
   filter: (typeof filters)[number];
   metrics: Metric[];
+  schoolApplications: SchoolApplication[];
   setFilter: (value: (typeof filters)[number]) => void;
   tickets: Ticket[];
   onAdvanceTicket: (id: string) => void;
+  onUpdateApplicationStatus: (
+    applicationId: string,
+    status: ApplicationStatus,
+  ) => void;
 }) {
+  const pendingCount = schoolApplications.filter(
+    (application) => application.status === "待審核",
+  ).length;
+
   return (
     <>
       <MetricGrid metrics={metrics} label="超管平台概況" />
+
+      <section className="super-layout">
+        <section
+          className="panel application-review-panel"
+          aria-label="學校申請審核"
+        >
+          <PanelHeader
+            eyebrow="學校申請"
+            title="學校申請審核"
+            action={
+              <span className="status-chip status-待派工">
+                {pendingCount} 件待審核
+              </span>
+            }
+          />
+          <div className="application-review-list">
+            {schoolApplications.map((application) => {
+              const sheetUrl = getSafeSheetUrl(application.sheetUrl);
+
+              return (
+                <article className="application-review-row" key={application.id}>
+                  <div>
+                    <span>{application.id}</span>
+                    <h3>{application.schoolName}</h3>
+                    <p>{application.adminEmail}</p>
+                    <small>{application.submittedAt}</small>
+                  </div>
+                  <div>
+                    <ApplicationStatusBadge status={application.status} />
+                    <p>{application.note}</p>
+                    <a
+                      className="sheet-link"
+                      href={sheetUrl || MAIN_DATABASE_SHEET_URL}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      開啟設備表
+                    </a>
+                  </div>
+                  <div className="application-actions">
+                    <button
+                      className="primary-action"
+                      disabled={application.status === "已啟用"}
+                      onClick={() =>
+                        onUpdateApplicationStatus(application.id, "已啟用")
+                      }
+                      type="button"
+                    >
+                      啟用帳號
+                    </button>
+                    <button
+                      className="ghost-action"
+                      disabled={application.status === "退回補件"}
+                      onClick={() =>
+                        onUpdateApplicationStatus(application.id, "退回補件")
+                      }
+                      type="button"
+                    >
+                      退回補件
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+
+        <aside className="panel data-source-panel" aria-label="Google Sheet 主資料庫">
+          <PanelHeader
+            eyebrow="資料庫"
+            title="Google Sheet 主資料庫"
+            action={<span className="status-chip success">已指定</span>}
+          />
+          <div className="status-list">
+            <div className="status-line">
+              <div>
+                <strong>超管帳號</strong>
+                <span>目前身分：超級管理者</span>
+              </div>
+              <span className="status-chip success">啟用中</span>
+            </div>
+            <div className="status-line">
+              <div>
+                <strong>主資料分頁</strong>
+                <span>{MAIN_DATABASE_SHEET_NAME}</span>
+              </div>
+              <span className="status-chip success">已讀取</span>
+            </div>
+            <div className="status-line">
+              <div>
+                <strong>主資料庫網址</strong>
+                <a
+                  className="sheet-link"
+                  href={MAIN_DATABASE_SHEET_URL}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  開啟主資料庫
+                </a>
+              </div>
+              <span className="status-chip status-待料">待接寫入</span>
+            </div>
+          </div>
+        </aside>
+      </section>
 
       <section className="super-layout">
         <section className="panel school-status-panel" aria-label="各校系統狀態">
@@ -1562,6 +1927,33 @@ function RepairPanel({
         </button>
       </form>
     </section>
+  );
+}
+
+function MaintenanceTimeline({ tickets }: { tickets: Ticket[] }) {
+  const activeTickets = tickets
+    .filter((ticket) => ticket.status !== "已完成")
+    .slice(0, 4);
+
+  if (activeTickets.length === 0) {
+    return (
+      <div className="empty-state">
+        <strong>目前沒有待處理維修案件</strong>
+        <p>案件看板若沒有待派工、維修中或待料項目，這裡會保持清空。</p>
+      </div>
+    );
+  }
+
+  return (
+    <ol className="timeline">
+      {activeTickets.map((ticket) => (
+        <li key={ticket.id}>
+          <span>{formatTimelineTime(ticket.reportedAt)}</span>
+          <strong>{getTimelineTitle(ticket)}</strong>
+          <p>{getTimelineDetail(ticket)}</p>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -1797,6 +2189,10 @@ function StatusBadge({ status }: { status: TicketStatus }) {
   return <span className={`status-chip status-${status}`}>{status}</span>;
 }
 
+function ApplicationStatusBadge({ status }: { status: ApplicationStatus }) {
+  return <span className={`status-chip status-${status}`}>{status}</span>;
+}
+
 function StatusPill({ status }: { status: Cart["status"] }) {
   return <span className={`status-pill status-${status}`}>{status}</span>;
 }
@@ -1813,6 +2209,26 @@ function Meter({ label, value }: { label: string; value: number }) {
       </progress>
     </div>
   );
+}
+
+function formatTimelineTime(reportedAt: string) {
+  const timeMatch = reportedAt.match(/\d{2}:\d{2}/);
+  return timeMatch?.[0] ?? reportedAt;
+}
+
+function getTimelineTitle(ticket: Ticket) {
+  const statusAction: Record<TicketStatus, string> = {
+    待派工: "等待派工確認",
+    維修中: "維修處理中",
+    待料: "等待零件或廠商",
+    已完成: "已完成結案",
+  };
+
+  return `${ticket.cartId} ${statusAction[ticket.status]}`;
+}
+
+function getTimelineDetail(ticket: Ticket) {
+  return `${ticket.cart}｜${ticket.room}｜${ticket.issue}`;
 }
 
 function getSchoolMetrics(tickets: Ticket[], carts: Cart[]): Metric[] {
@@ -1874,7 +2290,7 @@ function getUserMetrics(tickets: Ticket[], carts: Cart[]): Metric[] {
   ];
 }
 
-function getSuperMetrics(): Metric[] {
+function getSuperMetrics(applications: SchoolApplication[]): Metric[] {
   const activeTickets = schoolStatuses.reduce(
     (sum, school) => sum + school.activeTickets,
     0,
@@ -1888,12 +2304,23 @@ function getSuperMetrics(): Metric[] {
     (sum, school) => sum + school.highPriority,
     0,
   );
+  const pendingApplications = applications.filter(
+    (application) => application.status === "待審核",
+  ).length;
+  const enabledApplications = applications.filter(
+    (application) => application.status === "已啟用",
+  ).length;
 
   return [
     {
-      label: "上線學校",
-      value: schoolStatuses.length.toString(),
-      detail: "示範租戶",
+      label: "待審核申請",
+      value: pendingApplications.toString(),
+      detail: "學校端註冊等待超管",
+    },
+    {
+      label: "已啟用學校",
+      value: enabledApplications.toString(),
+      detail: "已登錄設備 Google Sheet",
     },
     {
       label: "總推車數",
@@ -1911,6 +2338,29 @@ function getSuperMetrics(): Metric[] {
       detail: "今日需追蹤",
     },
   ];
+}
+
+function createEmptyApplicationForm(): SchoolApplicationForm {
+  return {
+    schoolName: "",
+    adminEmail: "",
+    password: "",
+    sheetUrl: "",
+  };
+}
+
+function createApplicationId(nextIndex: number) {
+  return `APP-ILC-${String(nextIndex).padStart(3, "0")}`;
+}
+
+function getApplicationStatusNote(status: ApplicationStatus) {
+  const notes: Record<ApplicationStatus, string> = {
+    待審核: "等待超管啟用帳號",
+    已啟用: "帳號已啟用，設備表已登錄",
+    退回補件: "退回學校端補齊資料",
+  };
+
+  return notes[status];
 }
 
 function createCartEditForm(cart: Cart): CartEditForm {
@@ -2108,6 +2558,24 @@ function readStoredCarts() {
   }
 }
 
+function readStoredSchoolApplications() {
+  try {
+    const stored = window.localStorage.getItem(APPLICATION_STORAGE_KEY);
+    if (!stored) {
+      return [];
+    }
+
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter(isSchoolApplication);
+  } catch {
+    return [];
+  }
+}
+
 function isCart(value: unknown): value is Cart {
   if (!value || typeof value !== "object") {
     return false;
@@ -2126,8 +2594,46 @@ function isCart(value: unknown): value is Cart {
   );
 }
 
+function isSchoolApplication(value: unknown): value is SchoolApplication {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const application = value as SchoolApplication;
+  return (
+    typeof application.id === "string" &&
+    typeof application.schoolName === "string" &&
+    typeof application.adminEmail === "string" &&
+    typeof application.sheetUrl === "string" &&
+    typeof application.submittedAt === "string" &&
+    typeof application.note === "string" &&
+    isApplicationStatus(application.status)
+  );
+}
+
 function isCartStatus(value: unknown): value is CartStatus {
   return cartStatuses.includes(value as CartStatus);
+}
+
+function isApplicationStatus(value: unknown): value is ApplicationStatus {
+  return ["待審核", "已啟用", "退回補件"].includes(value as ApplicationStatus);
+}
+
+function getSafeSheetUrl(value: string) {
+  try {
+    const url = new URL(value.trim());
+    if (
+      url.protocol !== "https:" ||
+      url.hostname !== "docs.google.com" ||
+      !url.pathname.startsWith("/spreadsheets/d/")
+    ) {
+      return "";
+    }
+
+    return url.toString();
+  } catch {
+    return "";
+  }
 }
 
 function createQrDataUrl(url: string) {
