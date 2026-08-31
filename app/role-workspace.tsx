@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+  type User,
+} from "firebase/auth";
 import { toDataURL } from "qrcode";
 import {
   useEffect,
@@ -8,6 +15,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
+import { getFirebaseAuth, isFirebaseConfigured } from "./firebase-client";
 
 type Role = "hub" | "user" | "school-admin" | "super-admin";
 type Priority = "高" | "中" | "低";
@@ -74,6 +82,16 @@ type SchoolApplicationForm = {
   sheetUrl: string;
 };
 
+type AuthForm = {
+  email: string;
+  password: string;
+};
+
+type AuthSession = {
+  uid: string;
+  email: string;
+};
+
 type Metric = {
   label: string;
   value: string;
@@ -98,6 +116,8 @@ const APPLICATION_STORAGE_KEY = "tablet-cart-repair-system:school-applications";
 const MAIN_DATABASE_SHEET_URL =
   "https://docs.google.com/spreadsheets/d/1baE1-6fXpTfNQT59VdHJ2FuecaSy5OmbR392ODrdaTA/edit?usp=sharing";
 const MAIN_DATABASE_SHEET_NAME = "工作表1";
+const SUPER_ADMIN_EMAIL =
+  process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL ?? "ychao@tmail.ilc.edu.tw";
 
 const initialTickets: Ticket[] = [
   {
@@ -369,6 +389,10 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
   );
   const [applicationForm, setApplicationForm] =
     useState<SchoolApplicationForm>(createEmptyApplicationForm());
+  const [authForm, setAuthForm] = useState<AuthForm>(createEmptyAuthForm());
+  const [authSession, setAuthSession] = useState<AuthSession | null>(null);
+  const [authLoading, setAuthLoading] = useState(isFirebaseConfigured());
+  const [authMessage, setAuthMessage] = useState("");
   const [selectedCartId, setSelectedCartId] = useState(initialCarts[0].id);
   const [filter, setFilter] = useState<(typeof filters)[number]>("全部");
   const [room, setRoom] = useState(initialCarts[0].room);
@@ -402,6 +426,8 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     managedCarts.find((item) => item.id === selectedCartId) ?? managedCarts[0];
   const generatedCart =
     managedCarts.find((item) => item.id === generatedCartId) ?? managedCarts[0];
+  const isSuperAdmin =
+    authSession?.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -451,6 +477,19 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     });
 
     return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
+    if (!isFirebaseConfigured()) {
+      return;
+    }
+
+    const unsubscribe = onAuthStateChanged(getFirebaseAuth(), (user) => {
+      setAuthSession(user ? createAuthSession(user) : null);
+      setAuthLoading(false);
+    });
+
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -530,7 +569,9 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     });
   }
 
-  function handleSubmitSchoolApplication(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmitSchoolApplication(
+    event: FormEvent<HTMLFormElement>,
+  ) {
     event.preventDefault();
 
     const safeSheetUrl = getSafeSheetUrl(applicationForm.sheetUrl);
@@ -541,6 +582,26 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
 
     const schoolName = applicationForm.schoolName.trim();
     const adminEmail = applicationForm.adminEmail.trim();
+    const password = applicationForm.password;
+
+    if (isFirebaseConfigured()) {
+      setAuthLoading(true);
+      try {
+        const credential = await createUserWithEmailAndPassword(
+          getFirebaseAuth(),
+          adminEmail,
+          password,
+        );
+        setAuthSession(createAuthSession(credential.user));
+        setAuthMessage(`${adminEmail} 已建立 Firebase 帳號。`);
+      } catch (error) {
+        setAuthMessage(getFirebaseAuthErrorMessage(error));
+        setAuthLoading(false);
+        return;
+      }
+      setAuthLoading(false);
+    }
+
     const nextApplication: SchoolApplication = {
       id: createApplicationId(schoolApplications.length + 1),
       schoolName,
@@ -561,6 +622,43 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     ]);
     setApplicationForm(createEmptyApplicationForm());
     setScanMessage(`${schoolName} 已送出申請，等待超管啟用帳號。`);
+  }
+
+  async function handleFirebaseLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!isFirebaseConfigured()) {
+      setAuthMessage("Firebase 設定尚未完成，請補上 Web App 設定值。");
+      return;
+    }
+
+    setAuthLoading(true);
+    try {
+      const credential = await signInWithEmailAndPassword(
+        getFirebaseAuth(),
+        authForm.email.trim(),
+        authForm.password,
+      );
+      setAuthSession(createAuthSession(credential.user));
+      setAuthForm(createEmptyAuthForm());
+      setAuthMessage(`${credential.user.email ?? authForm.email} 已登入。`);
+    } catch (error) {
+      setAuthMessage(getFirebaseAuthErrorMessage(error));
+    }
+    setAuthLoading(false);
+  }
+
+  async function handleFirebaseSignOut() {
+    if (!isFirebaseConfigured()) {
+      setAuthSession(null);
+      return;
+    }
+
+    setAuthLoading(true);
+    await signOut(getFirebaseAuth());
+    setAuthSession(null);
+    setAuthLoading(false);
+    setAuthMessage("已登出 Firebase。");
   }
 
   function updateSchoolApplicationStatus(
@@ -800,6 +898,10 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
       {activeRole === "school-admin" && (
         <SchoolAdminPage
           applicationForm={applicationForm}
+          authForm={authForm}
+          authLoading={authLoading}
+          authMessage={authMessage}
+          authSession={authSession}
           cartForm={cartForm}
           cartEditForm={cartEditForm}
           copiedCartId={copiedCartId}
@@ -816,6 +918,7 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
           setFilter={setFilter}
           setGeneratedCartId={setGeneratedCartId}
           setApplicationForm={setApplicationForm}
+          setAuthForm={setAuthForm}
           schoolApplications={schoolApplications}
           tickets={tickets}
           onAdvanceTicket={advanceTicket}
@@ -825,6 +928,8 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
           onCreateCart={handleCreateCart}
           onDeleteCart={deleteCart}
           onDownloadCartQr={downloadCartQr}
+          onFirebaseLogin={handleFirebaseLogin}
+          onFirebaseSignOut={handleFirebaseSignOut}
           onSubmitSchoolApplication={handleSubmitSchoolApplication}
           onUpdateCart={handleUpdateCart}
           onUpdateCartStatus={updateCartStatus}
@@ -833,12 +938,20 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
 
       {activeRole === "super-admin" && (
         <SuperAdminPage
+          authForm={authForm}
+          authLoading={authLoading}
+          authMessage={authMessage}
+          authSession={authSession}
           filter={filter}
+          isSuperAdmin={isSuperAdmin}
           metrics={superMetrics}
           schoolApplications={schoolApplications}
+          setAuthForm={setAuthForm}
           setFilter={setFilter}
           tickets={tickets}
           onAdvanceTicket={advanceTicket}
+          onFirebaseLogin={handleFirebaseLogin}
+          onFirebaseSignOut={handleFirebaseSignOut}
           onUpdateApplicationStatus={updateSchoolApplicationStatus}
         />
       )}
@@ -1062,6 +1175,10 @@ function UserPage({
 
 function SchoolAdminPage({
   applicationForm,
+  authForm,
+  authLoading,
+  authMessage,
+  authSession,
   cartForm,
   cartEditForm,
   copiedCartId,
@@ -1078,6 +1195,7 @@ function SchoolAdminPage({
   setFilter,
   setGeneratedCartId,
   setApplicationForm,
+  setAuthForm,
   schoolApplications,
   tickets,
   onAdvanceTicket,
@@ -1087,11 +1205,17 @@ function SchoolAdminPage({
   onCreateCart,
   onDeleteCart,
   onDownloadCartQr,
+  onFirebaseLogin,
+  onFirebaseSignOut,
   onSubmitSchoolApplication,
   onUpdateCart,
   onUpdateCartStatus,
 }: {
   applicationForm: SchoolApplicationForm;
+  authForm: AuthForm;
+  authLoading: boolean;
+  authMessage: string;
+  authSession: AuthSession | null;
   cartForm: CartForm;
   cartEditForm: CartEditForm;
   copiedCartId: string | null;
@@ -1110,6 +1234,7 @@ function SchoolAdminPage({
   setApplicationForm: (
     updater: (current: SchoolApplicationForm) => SchoolApplicationForm,
   ) => void;
+  setAuthForm: (updater: (current: AuthForm) => AuthForm) => void;
   schoolApplications: SchoolApplication[];
   tickets: Ticket[];
   onAdvanceTicket: (id: string) => void;
@@ -1119,6 +1244,8 @@ function SchoolAdminPage({
   onCreateCart: (event: FormEvent<HTMLFormElement>) => void;
   onDeleteCart: (cartId: string) => void;
   onDownloadCartQr: (cart: Cart) => void;
+  onFirebaseLogin: (event: FormEvent<HTMLFormElement>) => void;
+  onFirebaseSignOut: () => void;
   onSubmitSchoolApplication: (event: FormEvent<HTMLFormElement>) => void;
   onUpdateCart: (event: FormEvent<HTMLFormElement>) => void;
   onUpdateCartStatus: (cartId: string, status: CartStatus) => void;
@@ -1126,6 +1253,18 @@ function SchoolAdminPage({
   return (
     <>
       <MetricGrid metrics={metrics} label="學校管理概況" />
+
+      <FirebaseAuthPanel
+        authForm={authForm}
+        authLoading={authLoading}
+        authMessage={authMessage}
+        authSession={authSession}
+        isSuperAdmin={false}
+        panelTitle="學校管理者登入"
+        setAuthForm={setAuthForm}
+        onLogin={onFirebaseLogin}
+        onSignOut={onFirebaseSignOut}
+      />
 
       <SchoolApplicationPanel
         applicationForm={applicationForm}
@@ -1465,6 +1604,114 @@ function SchoolAdminPage({
   );
 }
 
+function FirebaseAuthPanel({
+  authForm,
+  authLoading,
+  authMessage,
+  authSession,
+  isSuperAdmin,
+  panelTitle,
+  setAuthForm,
+  onLogin,
+  onSignOut,
+}: {
+  authForm: AuthForm;
+  authLoading: boolean;
+  authMessage: string;
+  authSession: AuthSession | null;
+  isSuperAdmin: boolean;
+  panelTitle: string;
+  setAuthForm: (updater: (current: AuthForm) => AuthForm) => void;
+  onLogin: (event: FormEvent<HTMLFormElement>) => void;
+  onSignOut: () => void;
+}) {
+  const firebaseReady = isFirebaseConfigured();
+
+  return (
+    <section className="auth-section panel" aria-label={panelTitle}>
+      <PanelHeader
+        eyebrow="Firebase Auth"
+        title={panelTitle}
+        action={
+          <span className={firebaseReady ? "status-chip success" : "status-chip"}>
+            {firebaseReady ? "已連線" : "待設定"}
+          </span>
+        }
+      />
+
+      {authSession ? (
+        <div className="auth-account-row">
+          <div>
+            <span>目前登入</span>
+            <strong>{authSession.email}</strong>
+            <small>
+              {isSuperAdmin ? "超級管理者" : "學校管理者"}｜UID {authSession.uid}
+            </small>
+          </div>
+          <button
+            className="ghost-action"
+            disabled={authLoading}
+            onClick={onSignOut}
+            type="button"
+          >
+            登出
+          </button>
+        </div>
+      ) : (
+        <form className="auth-form" onSubmit={onLogin}>
+          <label>
+            登入信箱
+            <input
+              required
+              type="email"
+              value={authForm.email}
+              onChange={(event) =>
+                setAuthForm((current) => ({
+                  ...current,
+                  email: event.target.value,
+                }))
+              }
+            />
+          </label>
+          <label>
+            密碼
+            <input
+              required
+              minLength={8}
+              type="password"
+              value={authForm.password}
+              onChange={(event) =>
+                setAuthForm((current) => ({
+                  ...current,
+                  password: event.target.value,
+                }))
+              }
+            />
+          </label>
+          <button
+            className="primary-action"
+            disabled={!firebaseReady || authLoading}
+            type="submit"
+          >
+            {authLoading ? "登入中" : "登入"}
+          </button>
+        </form>
+      )}
+
+      <div className="auth-status-list">
+        <div className="status-line">
+          <div>
+            <strong>超管白名單</strong>
+            <span>{SUPER_ADMIN_EMAIL}</span>
+          </div>
+          <span className="status-chip success">已設定</span>
+        </div>
+        {authMessage && <p className="auth-message">{authMessage}</p>}
+      </div>
+    </section>
+  );
+}
+
 function SchoolApplicationPanel({
   applicationForm,
   applications,
@@ -1576,20 +1823,36 @@ function SchoolApplicationPanel({
 }
 
 function SuperAdminPage({
+  authForm,
+  authLoading,
+  authMessage,
+  authSession,
   filter,
+  isSuperAdmin,
   metrics,
   schoolApplications,
+  setAuthForm,
   setFilter,
   tickets,
   onAdvanceTicket,
+  onFirebaseLogin,
+  onFirebaseSignOut,
   onUpdateApplicationStatus,
 }: {
+  authForm: AuthForm;
+  authLoading: boolean;
+  authMessage: string;
+  authSession: AuthSession | null;
   filter: (typeof filters)[number];
+  isSuperAdmin: boolean;
   metrics: Metric[];
   schoolApplications: SchoolApplication[];
+  setAuthForm: (updater: (current: AuthForm) => AuthForm) => void;
   setFilter: (value: (typeof filters)[number]) => void;
   tickets: Ticket[];
   onAdvanceTicket: (id: string) => void;
+  onFirebaseLogin: (event: FormEvent<HTMLFormElement>) => void;
+  onFirebaseSignOut: () => void;
   onUpdateApplicationStatus: (
     applicationId: string,
     status: ApplicationStatus,
@@ -1602,6 +1865,18 @@ function SuperAdminPage({
   return (
     <>
       <MetricGrid metrics={metrics} label="超管平台概況" />
+
+      <FirebaseAuthPanel
+        authForm={authForm}
+        authLoading={authLoading}
+        authMessage={authMessage}
+        authSession={authSession}
+        isSuperAdmin={isSuperAdmin}
+        panelTitle="超管 Firebase 登入"
+        setAuthForm={setAuthForm}
+        onLogin={onFirebaseLogin}
+        onSignOut={onFirebaseSignOut}
+      />
 
       <section className="super-layout">
         <section
@@ -2349,6 +2624,20 @@ function createEmptyApplicationForm(): SchoolApplicationForm {
   };
 }
 
+function createEmptyAuthForm(): AuthForm {
+  return {
+    email: "",
+    password: "",
+  };
+}
+
+function createAuthSession(user: User): AuthSession {
+  return {
+    uid: user.uid,
+    email: user.email ?? "未提供信箱",
+  };
+}
+
 function createApplicationId(nextIndex: number) {
   return `APP-ILC-${String(nextIndex).padStart(3, "0")}`;
 }
@@ -2361,6 +2650,28 @@ function getApplicationStatusNote(status: ApplicationStatus) {
   };
 
   return notes[status];
+}
+
+function getFirebaseAuthErrorMessage(error: unknown) {
+  const code =
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string"
+      ? error.code
+      : "";
+
+  const messages: Record<string, string> = {
+    "auth/email-already-in-use": "這個信箱已經註冊，請改用登入。",
+    "auth/invalid-email": "信箱格式不正確。",
+    "auth/invalid-credential": "登入資料不正確，請確認信箱與密碼。",
+    "auth/missing-password": "請輸入密碼。",
+    "auth/operation-not-allowed": "Firebase 尚未啟用 Email/Password 登入。",
+    "auth/unauthorized-domain": "Firebase 尚未允許目前網站網域登入。",
+    "auth/weak-password": "密碼強度不足，請至少使用 8 個字元。",
+  };
+
+  return messages[code] ?? "Firebase 登入發生錯誤，請稍後再試。";
 }
 
 function createCartEditForm(cart: Cart): CartEditForm {

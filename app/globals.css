@@ -320,6 +320,7 @@ button:disabled {
 .repair-form,
 .admin-form,
 .application-form,
+.auth-form,
 .cart-edit-form {
   display: grid;
   gap: 16px;
@@ -329,6 +330,7 @@ button:disabled {
 .repair-form label,
 .admin-form label,
 .application-form label,
+.auth-form label,
 .cart-edit-form label,
 .inline-status-control,
 .field-group {
@@ -346,6 +348,7 @@ button:disabled {
 .admin-form select,
 .application-form input,
 .application-form select,
+.auth-form input,
 .cart-edit-form input,
 .cart-edit-form select,
 .inline-status-control select {
@@ -366,6 +369,7 @@ button:disabled {
 .admin-form select,
 .application-form input,
 .application-form select,
+.auth-form input,
 .cart-edit-form input,
 .cart-edit-form select,
 .inline-status-control select {
@@ -387,6 +391,7 @@ button:disabled {
 .admin-form select:focus,
 .application-form input:focus,
 .application-form select:focus,
+.auth-form input:focus,
 .cart-edit-form input:focus,
 .cart-edit-form select:focus,
 .inline-status-control select:focus {
@@ -649,6 +654,72 @@ button:disabled {
 .admin-section {
   max-width: 1240px;
   margin: 18px auto 0;
+}
+
+.auth-section {
+  max-width: 1240px;
+  margin: 18px auto 0;
+}
+
+.auth-form {
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  align-items: end;
+}
+
+.auth-form .primary-action {
+  min-width: 120px;
+}
+
+.auth-account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 18px;
+  border: 1px solid #e2e6dc;
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 14px;
+}
+
+.auth-account-row span,
+.auth-status-list span {
+  color: var(--green);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.auth-account-row strong {
+  display: block;
+  margin-top: 4px;
+  color: #1b2922;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.auth-account-row small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.auth-status-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.auth-message {
+  margin: 0;
+  border: 1px solid #bdd8c7;
+  border-radius: 8px;
+  background: #edf7ef;
+  color: #1f513b;
+  padding: 12px 14px;
+  font-size: 0.88rem;
+  font-weight: 800;
+  line-height: 1.5;
 }
 
 .application-section {
@@ -1345,6 +1416,7 @@ button:disabled {
 
   .topbar,
   .workspace-grid,
+  .auth-form,
   .application-layout,
   .admin-layout,
   .operations-grid,
@@ -1433,6 +1505,7 @@ button:disabled {
   }
 
   .qr-actions,
+  .auth-account-row,
   .application-mini-row,
   .application-review-row,
   .managed-cart-row,
@@ -1441,6 +1514,11 @@ button:disabled {
   }
 
   .application-mini-row {
+    display: grid;
+    align-items: start;
+  }
+
+  .auth-account-row {
     display: grid;
     align-items: start;
   }

@@ -61,6 +61,8 @@ test("server-renders the school admin page with QR management", async () => {
 
   const html = await response.text();
   assert.match(html, /各校系統管理者頁面/);
+  assert.match(html, /學校管理者登入/);
+  assert.match(html, /Firebase Auth/);
   assert.match(html, /學校端申請使用/);
   assert.match(html, /管理者信箱/);
   assert.match(html, /密碼/);
@@ -91,6 +93,9 @@ test("server-renders the super admin page", async () => {
   const html = await response.text();
   assert.match(html, /超管頁面/);
   assert.match(html, /Google Sheet 主資料庫與帳號啟用/);
+  assert.match(html, /超管 Firebase 登入/);
+  assert.match(html, /超管白名單/);
+  assert.match(html, /ychao@tmail\.ilc\.edu\.tw/);
   assert.match(html, /學校申請審核/);
   assert.match(html, /啟用帳號/);
   assert.match(html, /退回補件/);
