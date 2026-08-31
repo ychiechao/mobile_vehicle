@@ -1,7 +1,7 @@
 import { getFirebaseRuntimeSettings } from "../../firebase-runtime";
 
-export async function GET(request: Request) {
-  const settings = getFirebaseRuntimeSettings(request);
+export async function GET() {
+  const settings = getFirebaseRuntimeSettings();
 
   return Response.json(
     {

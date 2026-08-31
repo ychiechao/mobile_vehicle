@@ -14,15 +14,11 @@ export type FirebaseRuntimeEnv = Partial<
   >
 >;
 
-export function getFirebaseRuntimeSettings(
-  request: Request,
-  env?: FirebaseRuntimeEnv,
-) {
+export function getFirebaseRuntimeSettings(env?: FirebaseRuntimeEnv) {
   const firebaseAuthDomain = getRequiredEnv("FIREBASE_AUTH_DOMAIN", env);
-  const appAuthDomain = new URL(request.url).host;
   const config = pruneFirebaseConfig({
     apiKey: getRequiredEnv("FIREBASE_API_KEY", env),
-    authDomain: appAuthDomain,
+    authDomain: firebaseAuthDomain,
     databaseURL: getRequiredEnv("FIREBASE_DATABASE_URL", env),
     projectId: getRequiredEnv("FIREBASE_PROJECT_ID", env),
     appId: getRequiredEnv("FIREBASE_APP_ID", env),
@@ -38,10 +34,6 @@ export function getFirebaseRuntimeSettings(
     superAdminEmail:
       getRequiredEnv("SUPER_ADMIN_EMAIL", env) || DEFAULT_SUPER_ADMIN_EMAIL,
   };
-}
-
-export function getFirebaseAuthProxyDomain(env?: FirebaseRuntimeEnv) {
-  return getRequiredEnv("FIREBASE_AUTH_DOMAIN", env);
 }
 
 function getRequiredEnv(name: keyof FirebaseRuntimeEnv, env?: FirebaseRuntimeEnv) {

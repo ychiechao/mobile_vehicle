@@ -130,7 +130,7 @@ test("serves Firebase config from runtime environment", async () => {
     const payload = await response.json();
     assert.equal(payload.configured, true);
     assert.equal(payload.config.apiKey, "test-firebase-api-key");
-    assert.equal(payload.config.authDomain, "localhost");
+    assert.equal(payload.config.authDomain, "test-project.firebaseapp.com");
     assert.equal(payload.config.projectId, "test-project");
     assert.equal(payload.superAdminEmail, "super-admin@example.edu.tw");
   } finally {
@@ -140,55 +140,6 @@ test("serves Firebase config from runtime environment", async () => {
       } else {
         process.env[key] = value;
       }
-    }
-  }
-});
-
-test("serves same-origin Firebase init config", async () => {
-  const previous = {
-    FIREBASE_API_KEY: process.env.FIREBASE_API_KEY,
-    FIREBASE_AUTH_DOMAIN: process.env.FIREBASE_AUTH_DOMAIN,
-    FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
-  };
-
-  process.env.FIREBASE_API_KEY = "test-firebase-api-key";
-  process.env.FIREBASE_AUTH_DOMAIN = "test-project.firebaseapp.com";
-  process.env.FIREBASE_PROJECT_ID = "test-project";
-
-  try {
-    const response = await render("/__/firebase/init.json", "application/json");
-    assert.equal(response.status, 200);
-
-    const payload = await response.json();
-    assert.equal(payload.apiKey, "test-firebase-api-key");
-    assert.equal(payload.authDomain, "localhost");
-    assert.equal(payload.projectId, "test-project");
-  } finally {
-    for (const [key, value] of Object.entries(previous)) {
-      if (value === undefined) {
-        delete process.env[key];
-      } else {
-        process.env[key] = value;
-      }
-    }
-  }
-});
-
-test("reports missing Firebase auth proxy target", async () => {
-  const previous = process.env.FIREBASE_AUTH_DOMAIN;
-  delete process.env.FIREBASE_AUTH_DOMAIN;
-
-  try {
-    const response = await render("/__/auth/handler", "application/json");
-    assert.equal(response.status, 503);
-
-    const payload = await response.json();
-    assert.match(payload.error, /proxy target/);
-  } finally {
-    if (previous === undefined) {
-      delete process.env.FIREBASE_AUTH_DOMAIN;
-    } else {
-      process.env.FIREBASE_AUTH_DOMAIN = previous;
     }
   }
 });

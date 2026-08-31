@@ -2,11 +2,10 @@
 
 import {
   createUserWithEmailAndPassword,
-  getRedirectResult,
   GoogleAuthProvider,
   onAuthStateChanged,
   signInWithEmailAndPassword,
-  signInWithRedirect,
+  signInWithPopup,
   signOut,
   type User,
 } from "firebase/auth";
@@ -508,24 +507,6 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
           return;
         }
 
-        const redirectCredential = await getRedirectResult(auth).catch(
-          (error) => {
-            if (isActive) {
-              setAuthMessage(getFirebaseAuthErrorMessage(error));
-            }
-            return null;
-          },
-        );
-        if (isActive && redirectCredential?.user) {
-          const email = redirectCredential.user.email ?? "";
-          setAuthSession(createAuthSession(redirectCredential.user));
-          setAuthMessage(
-            email.toLowerCase() === settings.superAdminEmail.toLowerCase()
-              ? `${email} 已用 Google 登入。`
-              : `${email || "目前帳號"} 已登入，但不是超管白名單帳號。`,
-          );
-        }
-
         unsubscribe = onAuthStateChanged(auth, (user) => {
           setAuthSession(user ? createAuthSession(user) : null);
           setAuthLoading(false);
@@ -712,11 +693,21 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     setAuthLoading(true);
     try {
       const auth = await getFirebaseAuth();
-      await signInWithRedirect(auth, createGoogleProvider(superAdminEmail));
+      const credential = await signInWithPopup(
+        auth,
+        createGoogleProvider(superAdminEmail),
+      );
+      const email = credential.user.email ?? "";
+      setAuthSession(createAuthSession(credential.user));
+      setAuthMessage(
+        email.toLowerCase() === superAdminEmail.toLowerCase()
+          ? `${email} 已用 Google 登入。`
+          : `${email || "目前帳號"} 已登入，但不是超管白名單帳號。`,
+      );
     } catch (error) {
       setAuthMessage(getFirebaseAuthErrorMessage(error));
-      setAuthLoading(false);
     }
+    setAuthLoading(false);
   }
 
   async function handleFirebaseSignOut() {
