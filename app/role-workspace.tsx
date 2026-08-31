@@ -17,6 +17,7 @@ type CartStatus = "可借用" | "需檢查" | "停用";
 
 type Ticket = {
   id: string;
+  cartId: string;
   cart: string;
   room: string;
   issue: string;
@@ -78,6 +79,7 @@ const STORAGE_KEY = "tablet-cart-repair-system:carts";
 const initialTickets: Ticket[] = [
   {
     id: "R-2026-0830-018",
+    cartId: "A3-01",
     cart: "A 棟 3F 平板推車",
     room: "301 自然教室",
     issue: "第 12 台無法充電，充電座燈號未亮",
@@ -88,6 +90,7 @@ const initialTickets: Ticket[] = [
   },
   {
     id: "R-2026-0830-017",
+    cartId: "B2-02",
     cart: "B 棟 2F 平板推車",
     room: "204 英語教室",
     issue: "推車門鎖鬆動，借還時不易關閉",
@@ -98,6 +101,7 @@ const initialTickets: Ticket[] = [
   },
   {
     id: "R-2026-0829-033",
+    cartId: "ADM-01",
     cart: "行政樓備用推車",
     room: "設備室",
     issue: "2 台平板 Wi-Fi 連線不穩",
@@ -108,6 +112,7 @@ const initialTickets: Ticket[] = [
   },
   {
     id: "R-2026-0829-026",
+    cartId: "C1-01",
     cart: "C 棟 1F 平板推車",
     room: "資訊教室",
     issue: "已更換充電線並完成檢測",
@@ -416,6 +421,7 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
 
     const nextTicket: Ticket = {
       id: `R-2026-0830-${String(tickets.length + 19).padStart(3, "0")}`,
+      cartId: selectedCart?.id ?? "unassigned",
       cart: `${selectedCart?.label ?? "未指定"} 平板推車`,
       room,
       issue: `${repairType}｜${issue.trim() || "待補充故障描述"}`,
@@ -491,6 +497,17 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     setManagedCarts((current) =>
       current.map((item) => (item.id === editingCartId ? updatedCart : item)),
     );
+    setTickets((current) =>
+      current.map((ticket) =>
+        ticket.cartId === editingCartId
+          ? {
+              ...ticket,
+              cart: `${updatedCart.label} 平板推車`,
+              room: updatedCart.room,
+            }
+          : ticket,
+      ),
+    );
     setSelectedCartId((current) =>
       current === editingCartId ? updatedCart.id : current,
     );
@@ -536,9 +553,13 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
       return;
     }
 
+    const relatedTicketCount = countTicketsForCart(tickets, cartToDelete);
+
     if (deleteCandidateId !== cartId) {
       setDeleteCandidateId(cartId);
-      setScanMessage(`再按一次刪除即可移除 ${cartToDelete.label}。`);
+      setScanMessage(
+        `再按一次刪除即可移除 ${cartToDelete.label}，並同步刪除 ${relatedTicketCount} 件關聯案件。`,
+      );
       return;
     }
 
@@ -546,6 +567,9 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     const fallbackCart = nextCarts[0];
 
     setManagedCarts(nextCarts);
+    setTickets((current) =>
+      current.filter((ticket) => !ticketBelongsToCart(ticket, cartToDelete)),
+    );
 
     if (selectedCartId === cartId) {
       setSelectedCartId(fallbackCart.id);
@@ -561,7 +585,9 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     }
 
     setDeleteCandidateId(null);
-    setScanMessage(`${cartToDelete.label} 已刪除。`);
+    setScanMessage(
+      `${cartToDelete.label} 已刪除，並移除 ${relatedTicketCount} 件關聯案件。`,
+    );
   }
 
   function advanceTicket(id: string) {
@@ -1040,12 +1066,16 @@ function SchoolAdminPage({
             title="編輯、刪除與調整推車狀態"
             action={<span className="status-chip success">本機自動保存</span>}
           />
+          <p className="management-note">
+            刪除推車會同步移除案件看板中的關聯案件。
+          </p>
           {managedCarts.map((item) => (
             <article className="managed-cart-row" key={item.id}>
               <div>
                 <span>{item.id}</span>
                 <strong>{item.label}</strong>
                 <small>{item.room}</small>
+                <small>{countTicketsForCart(tickets, item)} 件關聯案件</small>
               </div>
               <label className="inline-status-control">
                 推車狀態
@@ -1915,6 +1945,21 @@ function updateCartFromEditForm(cart: Cart, form: CartEditForm): Cart {
     offline,
     slots: createSlotsForCart(tabletCount, status, offline),
   };
+}
+
+function countTicketsForCart(tickets: Ticket[], cart: Pick<Cart, "id" | "label">) {
+  return tickets.filter((ticket) => ticketBelongsToCart(ticket, cart)).length;
+}
+
+function ticketBelongsToCart(
+  ticket: Ticket,
+  cart: Pick<Cart, "id" | "label">,
+) {
+  return (
+    ticket.cartId === cart.id ||
+    ticket.cart === `${cart.label} 平板推車` ||
+    ticket.cart === `${cart.label}備用推車`
+  );
 }
 
 function applyQuickCartStatus(cart: Cart, status: CartStatus): Cart {
