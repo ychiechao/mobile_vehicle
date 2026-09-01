@@ -50,13 +50,10 @@ test("server-renders the user page", async () => {
   assert.match(html, /使用者頁面/);
   assert.match(html, /掃描 QR 後查看推車狀態與上傳紀錄/);
   assert.match(html, /使用者紀錄概況/);
-  assert.match(html, /狀態總覽/);
-  assert.match(html, /目前回報異常狀態/);
-  assert.match(html, /若與現場看到的狀態相同/);
-  assert.match(html, /拍照撰寫紀錄/);
-  assert.match(html, /未照號碼擺放/);
-  assert.match(html, /拍照上傳照片/);
-  assert.match(html, /上傳紀錄/);
+  assert.match(html, /請掃描推車 QR Code/);
+  assert.match(html, /目前尚未帶入推車資料/);
+  assert.match(html, /等待推車資料/);
+  assert.match(html, /掃 QR 後才能拍照撰寫紀錄/);
   assert.match(html, /借用老師流程/);
   assert.match(html, /管理者完成後重置/);
   assert.doesNotMatch(html, /新增報修單/);
@@ -64,7 +61,7 @@ test("server-renders the user page", async () => {
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/i);
 });
 
-test("server-renders the school admin page with QR management", async () => {
+test("server-renders the school admin page locked until enabled", async () => {
   const response = await render("/school-admin");
   assert.equal(response.status, 200);
 
@@ -79,23 +76,19 @@ test("server-renders the school admin page with QR management", async () => {
   assert.match(html, /學校設備 Google Sheet 網址/);
   assert.match(html, /Google 帳號驗證與 Sheet 網址都完成後/);
   assert.match(html, /送出申請/);
+  assert.match(html, /請先完成 Google 帳號驗證/);
+  assert.match(html, /管理畫面已鎖定/);
   assert.doesNotMatch(html, /登入信箱/);
   assert.doesNotMatch(html, /密碼/);
-  assert.match(html, /新增推車並自動產生 QR Code/);
-  assert.match(html, /最新 QR Code/);
-  assert.match(html, /網址載入中/);
-  assert.match(html, /推車管理清單/);
-  assert.match(html, /編輯、刪除與調整推車狀態/);
-  assert.match(html, /編輯推車/);
-  assert.match(html, /刪除推車/);
-  assert.match(html, /下載 QR Code/);
-  assert.match(html, /推車狀態/);
-  assert.match(html, /關聯案件/);
-  assert.match(html, /刪除推車會同步移除案件看板中的關聯案件/);
-  assert.match(html, /案件看板/);
-  assert.match(html, /等待派工確認/);
-  assert.match(html, /等待零件或廠商/);
-  assert.match(html, /推車健康度/);
+  assert.doesNotMatch(html, /新增推車並自動產生 QR Code/);
+  assert.doesNotMatch(html, /最新 QR Code/);
+  assert.doesNotMatch(html, /推車管理清單/);
+  assert.doesNotMatch(html, /編輯推車/);
+  assert.doesNotMatch(html, /刪除推車/);
+  assert.doesNotMatch(html, /下載 QR Code/);
+  assert.doesNotMatch(html, /案件看板/);
+  assert.doesNotMatch(html, /推車健康度/);
+  assert.doesNotMatch(html, /A 棟 3F|B 棟 2F|行政樓備用推車/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/i);
 });
 
@@ -166,6 +159,12 @@ test("starts with no seeded school applications", async () => {
   assert.match(
     roleWorkspace,
     /const initialSchoolApplications: SchoolApplication\[\] = \[\];/,
+  );
+  assert.match(roleWorkspace, /const initialTickets: Ticket\[\] = \[\];/);
+  assert.match(roleWorkspace, /const initialCarts: Cart\[\] = \[\];/);
+  assert.match(
+    roleWorkspace,
+    /currentApplication\?\.status === "已啟用"[\s\S]*?return null;/,
   );
   assert.match(roleWorkspace, /目前尚無學校申請/);
   assert.match(roleWorkspace, /尚無已啟用學校/);
