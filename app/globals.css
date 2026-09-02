@@ -1493,23 +1493,8 @@ button:disabled {
 
 .slot-layer {
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr);
-  gap: 9px;
+  grid-template-columns: 1fr;
   align-items: center;
-}
-
-.slot-layer-label {
-  display: grid;
-  gap: 2px;
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 800;
-  line-height: 1.25;
-}
-
-.slot-layer-label strong {
-  color: #1b2922;
-  font-size: 0.76rem;
 }
 
 .slot-layer-grid {
@@ -1757,13 +1742,7 @@ button:disabled {
   }
 
   .slot-layer {
-    grid-template-columns: 1fr;
     gap: 5px;
-  }
-
-  .slot-layer-label {
-    display: flex;
-    justify-content: space-between;
   }
 
   .slot-layer-grid {

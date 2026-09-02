@@ -2986,11 +2986,11 @@ function DeviceSlotMap({ cart }: { cart: Cart }) {
       </div>
 
       {layers.map((layer) => (
-        <div className="slot-layer" key={layer.range}>
-          <div className="slot-layer-label">
-            <span>{layer.label}</span>
-            <strong>{layer.range}</strong>
-          </div>
+        <div
+          aria-label={`${layer.label} ${layer.range}`}
+          className="slot-layer"
+          key={layer.range}
+        >
           <div className="slot-layer-grid">
             {layer.cells.map((cell) => (
               <span

@@ -189,6 +189,8 @@ test("renders cart device status as three left-to-right layers", async () => {
   assert.match(globals, /grid-template-columns: repeat\(12, minmax\(0, 1fr\)\)/);
   assert.match(globals, /\.slot-cell\.warning/);
   assert.match(globals, /\.slot-cell\.offline/);
+  assert.doesNotMatch(roleWorkspace, /slot-layer-label/);
+  assert.doesNotMatch(globals, /slot-layer-label/);
 });
 
 test("keeps starter preview code out of the app shell", async () => {
