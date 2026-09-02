@@ -171,7 +171,39 @@ test("starts with no seeded school applications", async () => {
   assert.match(roleWorkspace, /目前尚無學校申請/);
   assert.match(roleWorkspace, /尚無已啟用學校/);
   assert.match(roleWorkspace, /尚無追蹤事項/);
+  assert.match(roleWorkspace, /loadSchoolCartsFromSheet/);
+  assert.match(roleWorkspace, /syncSchoolCartsToSheet/);
+  assert.doesNotMatch(roleWorkspace, /readStoredCarts/);
+  assert.doesNotMatch(roleWorkspace, /localStorage\.setItem\(STORAGE_KEY/);
   assert.doesNotMatch(roleWorkspace, /宜蘭示範學校|羅東國小|蘇澳高中|冬山國小/);
+});
+
+test("protects the school cart Google Sheet sync API", async () => {
+  const response = await render(
+    "/api/school-carts?sheetUrl=https%3A%2F%2Fdocs.google.com%2Fspreadsheets%2Fd%2Ftest-sheet-id%2Fedit&adminEmail=school%40example.edu.tw",
+    "application/json",
+  );
+  assert.equal(response.status, 401);
+
+  const payload = await response.json();
+  assert.equal(payload.ok, false);
+  assert.match(payload.error, /請先使用 Google 帳號登入/);
+});
+
+test("writes school carts through Google Sheets instead of cart localStorage", async () => {
+  const [roleWorkspace, route, googleSheets] = await Promise.all([
+    readFile(new URL("../app/role-workspace.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/school-carts/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/google-sheets.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(roleWorkspace, /persistSchoolCarts/);
+  assert.match(route, /requireFirebaseUser/);
+  assert.match(route, /writeCartsToGoogleSheet/);
+  assert.match(googleSheets, /SCHOOL_CARTS_SHEET_NAME = "推車資料"/);
+  assert.match(googleSheets, /valueInputOption=RAW/);
+  assert.match(googleSheets, /GOOGLE_SERVICE_ACCOUNT_EMAIL/);
+  assert.match(googleSheets, /GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY/);
 });
 
 test("renders cart device status as three left-to-right layers", async () => {

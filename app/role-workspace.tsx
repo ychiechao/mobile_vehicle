@@ -94,6 +94,8 @@ type AuthSession = {
   email: string;
 };
 
+type SheetSyncStatus = "idle" | "loading" | "saving" | "error";
+
 type PhotoEvidence = {
   name: string;
   url: string;
@@ -118,18 +120,12 @@ type SchoolStatus = {
   status: "正常" | "需協助" | "待設定";
 };
 
-const STORAGE_KEY = "tablet-cart-repair-system:carts";
+const LEGACY_CART_STORAGE_KEY = "tablet-cart-repair-system:carts";
 const APPLICATION_STORAGE_KEY = "tablet-cart-repair-system:school-applications";
 const MAIN_DATABASE_SHEET_URL =
   "https://docs.google.com/spreadsheets/d/1baE1-6fXpTfNQT59VdHJ2FuecaSy5OmbR392ODrdaTA/edit?usp=sharing";
 const MAIN_DATABASE_SHEET_NAME = "工作表1";
 const DEFAULT_SUPER_ADMIN_EMAIL = "ychao@tmail.ilc.edu.tw";
-
-const seedCartFingerprints = [
-  { id: "A3-01", label: "A 棟 3F", room: "301 自然教室" },
-  { id: "B2-02", label: "B 棟 2F", room: "204 英語教室" },
-  { id: "ADM-01", label: "行政樓", room: "設備室" },
-];
 
 const initialTickets: Ticket[] = [];
 
@@ -245,6 +241,8 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
   );
   const [runtimeOrigin, setRuntimeOrigin] = useState("");
   const [storageReady, setStorageReady] = useState(false);
+  const [sheetSyncStatus, setSheetSyncStatus] =
+    useState<SheetSyncStatus>("idle");
   const [copiedCartId, setCopiedCartId] = useState<string | null>(null);
   const [downloadedCartId, setDownloadedCartId] = useState<string | null>(null);
   const [generatedCartId, setGeneratedCartId] = useState("");
@@ -279,14 +277,19 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
   );
   const hasEnabledSchoolAccess =
     currentSchoolApplication?.status === "已啟用";
+  const enabledSchoolSheetUrl =
+    hasEnabledSchoolAccess && currentSchoolApplication
+      ? getSafeSheetUrl(currentSchoolApplication.sheetUrl)
+      : "";
+  const isSheetSyncing =
+    sheetSyncStatus === "loading" || sheetSyncStatus === "saving";
   const schoolAdminCarts = hasEnabledSchoolAccess ? managedCarts : [];
   const schoolAdminTickets = hasEnabledSchoolAccess ? tickets : [];
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
-      const storedCarts = readStoredCarts();
       const storedApplications = readStoredSchoolApplications();
-      let nextCarts = storedCarts;
+      let nextCarts: Cart[] = [];
       const nextApplications = storedApplications;
 
       const params = new URLSearchParams(window.location.search);
@@ -323,6 +326,7 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
 
       setManagedCarts(nextCarts);
       setSchoolApplications(nextApplications);
+      removeLegacyStoredCarts();
       setRuntimeOrigin(window.location.origin);
       setStorageReady(true);
     });
@@ -385,12 +389,70 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
       return;
     }
 
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(managedCarts));
     window.localStorage.setItem(
       APPLICATION_STORAGE_KEY,
       JSON.stringify(schoolApplications),
     );
-  }, [managedCarts, schoolApplications, storageReady]);
+  }, [schoolApplications, storageReady]);
+
+  useEffect(() => {
+    if (
+      activeRole !== "school-admin" ||
+      !authSession ||
+      !enabledSchoolSheetUrl ||
+      !storageReady
+    ) {
+      return;
+    }
+
+    let isActive = true;
+
+    void Promise.resolve()
+      .then(() => {
+        if (!isActive) {
+          return [];
+        }
+
+        setSheetSyncStatus("loading");
+        setScanMessage("正在從學校 Google Sheet 載入推車資料。");
+        return loadSchoolCartsFromSheet(enabledSchoolSheetUrl, authSession.email);
+      })
+      .then((carts) => {
+        if (!isActive) {
+          return;
+        }
+
+        const firstCart = carts[0] ?? null;
+        setManagedCarts(carts);
+        setSelectedCartId(firstCart?.id ?? "");
+        setGeneratedCartId(firstCart?.id ?? "");
+        setRoom(firstCart?.room ?? "");
+        setSheetSyncStatus("idle");
+        setScanMessage(
+          carts.length === 0
+            ? "學校 Google Sheet 目前沒有推車資料，可以新增第一台推車。"
+            : `已從學校 Google Sheet 載入 ${carts.length} 台推車。`,
+        );
+      })
+      .catch((error) => {
+        if (!isActive) {
+          return;
+        }
+
+        setManagedCarts([]);
+        setSheetSyncStatus("error");
+        setScanMessage(getSheetSyncErrorMessage(error));
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [
+    activeRole,
+    authSession,
+    enabledSchoolSheetUrl,
+    storageReady,
+  ]);
 
   const hubMetrics = useMemo(
     () => getSchoolMetrics(tickets, managedCarts),
@@ -465,7 +527,34 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     });
   }
 
-  function handleCreateCart(event: FormEvent<HTMLFormElement>) {
+  async function persistSchoolCarts(nextCarts: Cart[], successMessage: string) {
+    if (!enabledSchoolSheetUrl || !authSession) {
+      setSheetSyncStatus("error");
+      setScanMessage("請先完成學校帳號啟用，並確認已提供 Google Sheet 網址。");
+      return false;
+    }
+
+    setSheetSyncStatus("saving");
+    setScanMessage("正在寫入學校 Google Sheet。");
+
+    try {
+      await syncSchoolCartsToSheet(
+        enabledSchoolSheetUrl,
+        authSession.email,
+        nextCarts,
+      );
+      setManagedCarts(nextCarts);
+      setSheetSyncStatus("idle");
+      setScanMessage(successMessage);
+      return true;
+    } catch (error) {
+      setSheetSyncStatus("error");
+      setScanMessage(getSheetSyncErrorMessage(error));
+      return false;
+    }
+  }
+
+  async function handleCreateCart(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const id = normalizeCartId(cartForm.id || cartForm.label);
@@ -480,15 +569,22 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
       status: "可借用",
       slots: createSlots(Number(cartForm.tabletCount)),
     };
-
-    setManagedCarts((current) => [
+    const nextCarts = [
       nextCart,
-      ...current.filter((item) => item.id !== nextCart.id),
-    ]);
+      ...managedCarts.filter((item) => item.id !== nextCart.id),
+    ];
+    const saved = await persistSchoolCarts(
+      nextCarts,
+      `${nextCart.label} 已寫入 Google Sheet，報修網址與 QR Code 已自動產生。`,
+    );
+
+    if (!saved) {
+      return;
+    }
+
     setSelectedCartId(nextCart.id);
     setGeneratedCartId(nextCart.id);
     setRoom(nextCart.room);
-    setScanMessage(`${nextCart.label} 已建立，報修網址與 QR Code 已自動產生。`);
     setCartForm({
       id: suggestNextCartId(id),
       label: "",
@@ -676,7 +772,7 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     setDeleteCandidateId(null);
   }
 
-  function handleUpdateCart(event: FormEvent<HTMLFormElement>) {
+  async function handleUpdateCart(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!editingCartId) {
@@ -690,9 +786,18 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     }
 
     const updatedCart = updateCartFromEditForm(existingCart, cartEditForm);
-    setManagedCarts((current) =>
-      current.map((item) => (item.id === editingCartId ? updatedCart : item)),
+    const nextCarts = managedCarts.map((item) =>
+      item.id === editingCartId ? updatedCart : item,
     );
+    const saved = await persistSchoolCarts(
+      nextCarts,
+      `${updatedCart.label} 已寫入 Google Sheet，新的報修網址與 QR Code 已同步套用。`,
+    );
+
+    if (!saved) {
+      return;
+    }
+
     setTickets((current) =>
       current.map((ticket) =>
         ticket.cartId === editingCartId
@@ -713,21 +818,26 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     );
     setEditingCartId(null);
     setDeleteCandidateId(null);
-    setScanMessage(
-      `${updatedCart.label} 已更新，新的報修網址與 QR Code 已同步套用。`,
-    );
   }
 
-  function updateCartStatus(cartId: string, status: CartStatus) {
+  async function updateCartStatus(cartId: string, status: CartStatus) {
     const existingCart = managedCarts.find((item) => item.id === cartId);
     if (!existingCart) {
       return;
     }
 
     const updatedCart = applyQuickCartStatus(existingCart, status);
-    setManagedCarts((current) =>
-      current.map((item) => (item.id === cartId ? updatedCart : item)),
+    const nextCarts = managedCarts.map((item) =>
+      item.id === cartId ? updatedCart : item,
     );
+    const saved = await persistSchoolCarts(
+      nextCarts,
+      `${updatedCart.label} 狀態已寫入 Google Sheet：「${status}」。`,
+    );
+
+    if (!saved) {
+      return;
+    }
 
     if (editingCartId === cartId) {
       setCartEditForm(createCartEditForm(updatedCart));
@@ -735,10 +845,9 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
 
     setGeneratedCartId(cartId);
     setDeleteCandidateId(null);
-    setScanMessage(`${updatedCart.label} 狀態已調整為「${status}」。`);
   }
 
-  function deleteCart(cartId: string) {
+  async function deleteCart(cartId: string) {
     const cartToDelete = managedCarts.find((item) => item.id === cartId);
     if (!cartToDelete) {
       return;
@@ -756,8 +865,15 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
 
     const nextCarts = managedCarts.filter((item) => item.id !== cartId);
     const fallbackCart = nextCarts[0] ?? null;
+    const saved = await persistSchoolCarts(
+      nextCarts,
+      `${cartToDelete.label} 已從 Google Sheet 刪除，並移除 ${relatedTicketCount} 件關聯案件。`,
+    );
 
-    setManagedCarts(nextCarts);
+    if (!saved) {
+      return;
+    }
+
     setTickets((current) =>
       current.filter((ticket) => !ticketBelongsToCart(ticket, cartToDelete)),
     );
@@ -776,9 +892,6 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     }
 
     setDeleteCandidateId(null);
-    setScanMessage(
-      `${cartToDelete.label} 已刪除，並移除 ${relatedTicketCount} 件關聯案件。`,
-    );
   }
 
   function advanceTicket(id: string) {
@@ -880,6 +993,7 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
           firebaseReady={firebaseReady}
           filter={filter}
           generatedCart={generatedCart}
+          isSheetSyncing={isSheetSyncing}
           managedCarts={schoolAdminCarts}
           metrics={schoolAdminMetrics}
           origin={origin}
@@ -890,6 +1004,7 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
           setApplicationForm={setApplicationForm}
           setAuthForm={setAuthForm}
           schoolApplications={schoolApplications}
+          sheetSyncStatus={sheetSyncStatus}
           currentApplication={currentSchoolApplication}
           superAdminEmail={superAdminEmail}
           tickets={schoolAdminTickets}
@@ -1456,6 +1571,7 @@ function SchoolAdminPage({
   firebaseReady,
   filter,
   generatedCart,
+  isSheetSyncing,
   managedCarts,
   metrics,
   origin,
@@ -1466,6 +1582,7 @@ function SchoolAdminPage({
   setApplicationForm,
   setAuthForm,
   schoolApplications,
+  sheetSyncStatus,
   superAdminEmail,
   tickets,
   onAdvanceTicket,
@@ -1497,6 +1614,7 @@ function SchoolAdminPage({
   firebaseReady: boolean;
   filter: (typeof filters)[number];
   generatedCart: Cart | null;
+  isSheetSyncing: boolean;
   managedCarts: Cart[];
   metrics: Metric[];
   origin: string;
@@ -1509,6 +1627,7 @@ function SchoolAdminPage({
   ) => void;
   setAuthForm: (updater: (current: AuthForm) => AuthForm) => void;
   schoolApplications: SchoolApplication[];
+  sheetSyncStatus: SheetSyncStatus;
   superAdminEmail: string;
   tickets: Ticket[];
   onAdvanceTicket: (id: string) => void;
@@ -1572,7 +1691,11 @@ function SchoolAdminPage({
             <PanelHeader
               eyebrow="管理端"
               title="新增推車並自動產生 QR Code"
-              action={<span className="status-chip success">可列印張貼</span>}
+              action={
+                <span className={getSheetSyncStatusClass(sheetSyncStatus)}>
+                  {getSheetSyncStatusText(sheetSyncStatus)}
+                </span>
+              }
             />
             <form className="admin-form" onSubmit={onCreateCart}>
               <div className="admin-form-grid">
@@ -1633,8 +1756,12 @@ function SchoolAdminPage({
                   />
                 </label>
               </div>
-              <button className="primary-action" type="submit">
-                新增推車並產生 QR
+              <button
+                className="primary-action"
+                disabled={isSheetSyncing}
+                type="submit"
+              >
+                {isSheetSyncing ? "同步中" : "新增推車並產生 QR"}
               </button>
             </form>
           </div>
@@ -1655,10 +1782,10 @@ function SchoolAdminPage({
           <PanelHeader
             eyebrow="推車管理清單"
             title="編輯、刪除與調整推車狀態"
-            action={<span className="status-chip success">推車清單</span>}
+            action={<span className="status-chip success">推車資料分頁</span>}
           />
           <p className="management-note">
-            刪除推車會同步移除案件看板中的關聯案件。
+            推車變更會先寫入學校 Google Sheet；刪除推車會同步移除案件看板中的關聯案件。
           </p>
           {managedCarts.length === 0 ? (
             <div className="empty-state">
@@ -1679,6 +1806,7 @@ function SchoolAdminPage({
               <label className="inline-status-control">
                 推車狀態
                 <select
+                  disabled={isSheetSyncing}
                   value={item.status}
                   onChange={(event) =>
                     onUpdateCartStatus(item.id, event.target.value as CartStatus)
@@ -1695,6 +1823,7 @@ function SchoolAdminPage({
               <div className="managed-cart-actions">
                 <button
                   className="ghost-action"
+                  disabled={isSheetSyncing}
                   onClick={() => onBeginEditCart(item)}
                   type="button"
                 >
@@ -1728,6 +1857,7 @@ function SchoolAdminPage({
                       ? "danger-action pending"
                       : "danger-action"
                   }
+                  disabled={isSheetSyncing}
                   onClick={() => onDeleteCart(item.id)}
                   type="button"
                 >
@@ -1843,11 +1973,20 @@ function SchoolAdminPage({
                     </label>
                   </div>
                   <div className="cart-edit-actions">
-                    <button className="ghost-action" onClick={onCancelEditCart} type="button">
+                    <button
+                      className="ghost-action"
+                      disabled={isSheetSyncing}
+                      onClick={onCancelEditCart}
+                      type="button"
+                    >
                       取消
                     </button>
-                    <button className="primary-action" type="submit">
-                      儲存修改
+                    <button
+                      className="primary-action"
+                      disabled={isSheetSyncing}
+                      type="submit"
+                    >
+                      {isSheetSyncing ? "同步中" : "儲存修改"}
                     </button>
                   </div>
                 </form>
@@ -1900,7 +2039,9 @@ function SchoolAdminPage({
                 <strong>QR 張貼清單</strong>
                 <span>{managedCarts.length} 台推車</span>
               </div>
-              <span className="status-chip success">已同步</span>
+              <span className={getSheetSyncStatusClass(sheetSyncStatus)}>
+                {getSheetSyncStatusText(sheetSyncStatus)}
+              </span>
             </div>
           </div>
         </aside>
@@ -3058,6 +3199,23 @@ function StatusPill({ status }: { status: Cart["status"] }) {
   return <span className={`status-pill status-${status}`}>{status}</span>;
 }
 
+function getSheetSyncStatusText(status: SheetSyncStatus) {
+  const labels: Record<SheetSyncStatus, string> = {
+    error: "同步失敗",
+    idle: "已連接 Sheet",
+    loading: "正在讀取",
+    saving: "正在寫入",
+  };
+
+  return labels[status];
+}
+
+function getSheetSyncStatusClass(status: SheetSyncStatus) {
+  return status === "error"
+    ? "status-chip status-退回補件"
+    : "status-chip success";
+}
+
 function Meter({ label, value }: { label: string; value: number }) {
   return (
     <div className="meter">
@@ -3594,21 +3752,11 @@ function suggestNextCartId(currentId: string) {
   return `${prefix}${nextNumber}`;
 }
 
-function readStoredCarts() {
+function removeLegacyStoredCarts() {
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (!stored) {
-      return [];
-    }
-
-    const parsed = JSON.parse(stored);
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    return parsed.filter(isCart).filter((cart) => !isSeedCart(cart));
+    window.localStorage.removeItem(LEGACY_CART_STORAGE_KEY);
   } catch {
-    return [];
+    return;
   }
 }
 
@@ -3632,19 +3780,125 @@ function readStoredSchoolApplications() {
   }
 }
 
+async function loadSchoolCartsFromSheet(sheetUrl: string, adminEmail: string) {
+  const params = new URLSearchParams({
+    adminEmail,
+    sheetUrl,
+  });
+  const response = await fetch(`/api/school-carts?${params.toString()}`, {
+    cache: "no-store",
+    headers: await createSheetSyncHeaders(),
+  });
+  const payload = await readApiJson(response);
+
+  if (!response.ok) {
+    throw new Error(getApiResponseError(payload, "Google Sheet 讀取失敗。"));
+  }
+
+  return parseSchoolCartResponse(payload);
+}
+
+async function syncSchoolCartsToSheet(
+  sheetUrl: string,
+  adminEmail: string,
+  carts: Cart[],
+) {
+  const response = await fetch("/api/school-carts", {
+    body: JSON.stringify({
+      adminEmail,
+      carts: carts.map(serializeCartForSheetSync),
+      sheetUrl,
+    }),
+    cache: "no-store",
+    headers: await createSheetSyncHeaders(),
+    method: "PUT",
+  });
+  const payload = await readApiJson(response);
+
+  if (!response.ok) {
+    throw new Error(getApiResponseError(payload, "Google Sheet 寫入失敗。"));
+  }
+}
+
+async function createSheetSyncHeaders() {
+  const token = await getFirebaseIdToken();
+
+  return {
+    accept: "application/json",
+    authorization: `Bearer ${token}`,
+    "content-type": "application/json",
+  };
+}
+
+async function getFirebaseIdToken() {
+  const auth = await getFirebaseAuth();
+  const token = await auth.currentUser?.getIdToken();
+
+  if (!token) {
+    throw new Error("請先使用 Google 帳號登入。");
+  }
+
+  return token;
+}
+
+async function readApiJson(response: Response) {
+  try {
+    return (await response.json()) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function parseSchoolCartResponse(payload: unknown) {
+  if (!payload || typeof payload !== "object") {
+    return [];
+  }
+
+  const carts = (payload as { carts?: unknown }).carts;
+  if (!Array.isArray(carts)) {
+    return [];
+  }
+
+  return carts.filter(isCart);
+}
+
+function serializeCartForSheetSync(cart: Cart) {
+  return {
+    battery: cart.battery,
+    health: cart.health,
+    id: cart.id,
+    label: cart.label,
+    offline: cart.offline,
+    room: cart.room,
+    slots: cart.slots,
+    status: cart.status,
+  };
+}
+
+function getApiResponseError(payload: unknown, fallback: string) {
+  if (
+    payload &&
+    typeof payload === "object" &&
+    "error" in payload &&
+    typeof payload.error === "string" &&
+    payload.error.trim()
+  ) {
+    return payload.error;
+  }
+
+  return fallback;
+}
+
+function getSheetSyncErrorMessage(error: unknown) {
+  return error instanceof Error
+    ? error.message
+    : "Google Sheet 同步失敗，請確認網路、登入狀態與 Sheet 權限。";
+}
+
 function isSeedSchoolApplication(application: SchoolApplication) {
   return (
     application.adminEmail === "school-admin@example.edu.tw" ||
     application.adminEmail === "ict-admin@example.edu.tw"
-  );
-}
-
-function isSeedCart(cart: Cart) {
-  return seedCartFingerprints.some(
-    (seedCart) =>
-      seedCart.id === cart.id &&
-      seedCart.label === cart.label &&
-      seedCart.room === cart.room,
   );
 }
 

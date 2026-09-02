@@ -48,6 +48,29 @@ Firebase console setup:
 - Restrict the Firebase API key in Google Cloud API & Services Credentials to
   the deployed HTTP referrers and the Firebase APIs used by this app.
 
+## Google Sheets Sync Setup
+
+School cart data is stored in each school's Google Sheet. The school admin UI
+loads from the `推車資料` sheet tab after the account is enabled. Creating,
+editing, changing status, and deleting carts writes to Google Sheets first; the
+browser view updates only after the write succeeds.
+
+Required Cloudflare runtime secrets or environment variables:
+
+- `GOOGLE_SERVICE_ACCOUNT_EMAIL`
+- `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`
+
+Google Cloud setup:
+
+- Enable the Google Sheets API in the Google Cloud project used by the service
+  account.
+- Create a service account and store its email/private key only as Cloudflare
+  secrets. Do not commit the key JSON or private key to Git.
+- Share every school's equipment Google Sheet directly with
+  `GOOGLE_SERVICE_ACCOUNT_EMAIL` as an editor.
+- Do not set school sheets to "anyone with the link can edit"; use direct editor
+  sharing to the service account instead.
+
 ## Included Shape
 
 - edit site code under `app/`
