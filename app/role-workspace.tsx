@@ -23,6 +23,7 @@ type Role = "hub" | "user" | "school-admin" | "super-admin";
 type Priority = "高" | "中" | "低";
 type TicketStatus = "待派工" | "維修中" | "待料" | "已完成";
 type SlotStatus = "ok" | "warning" | "offline";
+type SlotDisplayStatus = SlotStatus | "empty";
 type CartStatus = "可借用" | "需檢查" | "停用";
 type UserRecordType = "開始使用檢查" | "未照號碼擺放" | "新增異常回報";
 
@@ -141,6 +142,11 @@ const userRecordTypes: UserRecordType[] = [
   "未照號碼擺放",
   "新增異常回報",
 ];
+const cartSlotLayers = [
+  { label: "第 1 層", range: "1-12", start: 1, end: 12 },
+  { label: "第 2 層", range: "13-24", start: 13, end: 24 },
+  { label: "第 3 層", range: "25-36", start: 25, end: 36 },
+];
 const cartStatuses: CartStatus[] = ["可借用", "需檢查", "停用"];
 const filters: Array<"全部" | TicketStatus> = [
   "全部",
@@ -247,7 +253,7 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
     id: "D4-01",
     label: "D 棟 4F",
     room: "402 多功能教室",
-    tabletCount: "30",
+    tabletCount: "36",
   });
   const [editingCartId, setEditingCartId] = useState<string | null>(null);
   const [cartEditForm, setCartEditForm] =
@@ -297,7 +303,7 @@ export function RoleWorkspace({ activeRole }: { activeRole: Role }) {
           battery: 100,
           offline: 0,
           status: "可借用",
-          slots: createSlots(30),
+          slots: createSlots(36),
         };
 
         nextCarts = [
@@ -1281,6 +1287,8 @@ function UserCartStatusPanel({
         </div>
       </div>
 
+      <DeviceSlotMap cart={cart} />
+
       <div className="active-abnormal-list">
         <div className="section-subhead">
           <strong>目前回報異常狀態</strong>
@@ -1558,12 +1566,6 @@ function SchoolAdminPage({
 
       {hasEnabledSchoolAccess && currentApplication && (
         <>
-          <SchoolDataSourcePanel
-            application={currentApplication}
-            cartCount={managedCarts.length}
-            ticketCount={tickets.length}
-          />
-
       <section className="admin-section panel" aria-label="推車 QR Code 管理">
         <div className="admin-layout">
           <div>
@@ -1619,7 +1621,7 @@ function SchoolAdminPage({
                   平板數量
                   <input
                     min="1"
-                    max="60"
+                    max="36"
                     type="number"
                     value={cartForm.tabletCount}
                     onChange={(event) =>
@@ -1813,7 +1815,7 @@ function SchoolAdminPage({
                       離線設備
                       <input
                         min="0"
-                        max="60"
+                        max="36"
                         type="number"
                         value={cartEditForm.offline}
                         onChange={(event) =>
@@ -1828,7 +1830,7 @@ function SchoolAdminPage({
                       平板數量
                       <input
                         min="1"
-                        max="60"
+                        max="36"
                         type="number"
                         value={cartEditForm.tabletCount}
                         onChange={(event) =>
@@ -2278,57 +2280,6 @@ function SchoolAccessNotice({
       <div className="empty-state">
         <strong>管理畫面已鎖定</strong>
         <p>{detail}</p>
-      </div>
-    </section>
-  );
-}
-
-function SchoolDataSourcePanel({
-  application,
-  cartCount,
-  ticketCount,
-}: {
-  application: SchoolApplication;
-  cartCount: number;
-  ticketCount: number;
-}) {
-  const isEmpty = cartCount === 0 && ticketCount === 0;
-
-  return (
-    <section className="panel school-source-panel" aria-label="學校資料來源">
-      <PanelHeader
-        eyebrow="資料來源"
-        title={`${application.schoolName} 已啟用`}
-        action={<span className="status-chip success">依資料表顯示</span>}
-      />
-      <div className="status-list">
-        <div className="status-line">
-          <div>
-            <strong>學校設備 Google Sheet</strong>
-            <span>{application.adminEmail}</span>
-          </div>
-          <a
-            className="sheet-link"
-            href={application.sheetUrl}
-            rel="noreferrer"
-            target="_blank"
-          >
-            開啟資料表
-          </a>
-        </div>
-        <div className="status-line">
-          <div>
-            <strong>{cartCount} 台推車</strong>
-            <span>{ticketCount} 件案件</span>
-          </div>
-          <span
-            className={
-              isEmpty ? "status-chip status-待料" : "status-chip success"
-            }
-          >
-            {isEmpty ? "目前空白" : "已載入"}
-          </span>
-        </div>
       </div>
     </section>
   );
@@ -3014,6 +2965,50 @@ function EmptyQrCard() {
   );
 }
 
+function DeviceSlotMap({ cart }: { cart: Cart }) {
+  const layers = getLayeredSlots(cart.slots);
+
+  return (
+    <div className="slot-map" aria-label={`${cart.label} 三層設備狀態`}>
+      <div className="slot-map-legend" aria-label="設備狀態圖例">
+        <span>
+          <i className="slot-legend-dot ok" aria-hidden="true" />
+          可用
+        </span>
+        <span>
+          <i className="slot-legend-dot warning" aria-hidden="true" />
+          需檢查
+        </span>
+        <span>
+          <i className="slot-legend-dot offline" aria-hidden="true" />
+          維修/離線
+        </span>
+      </div>
+
+      {layers.map((layer) => (
+        <div className="slot-layer" key={layer.range}>
+          <div className="slot-layer-label">
+            <span>{layer.label}</span>
+            <strong>{layer.range}</strong>
+          </div>
+          <div className="slot-layer-grid">
+            {layer.cells.map((cell) => (
+              <span
+                aria-label={`第 ${cell.number} 號${getSlotStatusLabel(cell.status)}`}
+                className={`slot-cell ${cell.status}`}
+                key={cell.number}
+                title={`第 ${cell.number} 號${getSlotStatusLabel(cell.status)}`}
+              >
+                {cell.number}
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function CartGrid({ carts }: { carts: Cart[] }) {
   if (carts.length === 0) {
     return (
@@ -3037,11 +3032,7 @@ function CartGrid({ carts }: { carts: Cart[] }) {
             </div>
             <StatusPill status={item.status} />
           </div>
-          <div className="slot-map" aria-label={`${item.label} 插槽狀態`}>
-            {item.slots.map((slot, index) => (
-              <span className={slot} key={`${item.id}-${index}`} />
-            ))}
-          </div>
+          <DeviceSlotMap cart={item} />
           <Meter label="健康度" value={item.health} />
           <Meter label="平均電量" value={item.battery} />
           <p>離線設備：{item.offline} 台</p>
@@ -3405,7 +3396,7 @@ function createEmptyCartEditForm(): CartEditForm {
     health: "100",
     battery: "100",
     offline: "0",
-    tabletCount: "30",
+    tabletCount: "36",
   };
 }
 
@@ -3413,7 +3404,7 @@ function updateCartFromEditForm(cart: Cart, form: CartEditForm): Cart {
   const tabletCount = clampInteger(
     form.tabletCount,
     1,
-    60,
+    36,
     cart.slots.length,
   );
   const offline = clampInteger(form.offline, 0, tabletCount, cart.offline);
@@ -3503,8 +3494,8 @@ function createRepairUrl(
 
 function createSlots(count: number): SlotStatus[] {
   const safeCount = Number.isFinite(count)
-    ? Math.min(Math.max(Math.round(count), 1), 60)
-    : 30;
+    ? Math.min(Math.max(Math.round(count), 1), 36)
+    : 36;
 
   return Array.from({ length: safeCount }, () => "ok");
 }
@@ -3514,13 +3505,16 @@ function createSlotsForCart(
   status: CartStatus,
   offline: number,
 ): SlotStatus[] {
-  const safeCount = clampInteger(count, 1, 60, 30);
+  const safeCount = clampInteger(count, 1, 36, 36);
   const safeOffline = clampInteger(offline, 0, safeCount, 0);
   const warningCount =
     status === "可借用"
       ? 0
       : status === "需檢查"
-        ? Math.min(safeCount - safeOffline, Math.max(1, Math.ceil(safeCount * 0.16)))
+        ? Math.min(
+            safeCount - safeOffline,
+            Math.max(1, Math.ceil(safeCount * 0.16)),
+          )
         : safeCount - safeOffline;
 
   return Array.from({ length: safeCount }, (_, index) => {
@@ -3534,6 +3528,32 @@ function createSlotsForCart(
 
     return "ok";
   });
+}
+
+function getLayeredSlots(slots: SlotStatus[]) {
+  return cartSlotLayers.map((layer) => ({
+    ...layer,
+    cells: Array.from(
+      { length: layer.end - layer.start + 1 },
+      (_, offset) => {
+        const number = layer.start + offset;
+        const status: SlotDisplayStatus = slots[number - 1] ?? "empty";
+
+        return { number, status };
+      },
+    ),
+  }));
+}
+
+function getSlotStatusLabel(status: SlotDisplayStatus) {
+  const labels: Record<SlotDisplayStatus, string> = {
+    empty: "空位",
+    offline: "維修或離線",
+    ok: "可用",
+    warning: "需檢查",
+  };
+
+  return labels[status];
 }
 
 function clampInteger(

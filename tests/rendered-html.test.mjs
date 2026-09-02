@@ -166,10 +166,29 @@ test("starts with no seeded school applications", async () => {
     roleWorkspace,
     /currentApplication\?\.status === "已啟用"[\s\S]*?return null;/,
   );
+  assert.doesNotMatch(roleWorkspace, /SchoolDataSourcePanel/);
+  assert.doesNotMatch(roleWorkspace, /依資料表顯示/);
   assert.match(roleWorkspace, /目前尚無學校申請/);
   assert.match(roleWorkspace, /尚無已啟用學校/);
   assert.match(roleWorkspace, /尚無追蹤事項/);
   assert.doesNotMatch(roleWorkspace, /宜蘭示範學校|羅東國小|蘇澳高中|冬山國小/);
+});
+
+test("renders cart device status as three left-to-right layers", async () => {
+  const [roleWorkspace, globals] = await Promise.all([
+    readFile(new URL("../app/role-workspace.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(roleWorkspace, /range: "1-12", start: 1, end: 12/);
+  assert.match(roleWorkspace, /range: "13-24", start: 13, end: 24/);
+  assert.match(roleWorkspace, /range: "25-36", start: 25, end: 36/);
+  assert.match(roleWorkspace, /function DeviceSlotMap/);
+  assert.match(roleWorkspace, /slots: createSlots\(36\)/);
+  assert.match(roleWorkspace, /tabletCount: "36"/);
+  assert.match(globals, /grid-template-columns: repeat\(12, minmax\(0, 1fr\)\)/);
+  assert.match(globals, /\.slot-cell\.warning/);
+  assert.match(globals, /\.slot-cell\.offline/);
 });
 
 test("keeps starter preview code out of the app shell", async () => {
